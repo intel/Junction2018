@@ -2,7 +2,7 @@ BlueZ D-Bus Mesh API description
 ***********************************
 
 Mesh Network Hierarchy
-rev-4.3
+rev-4.4
 ======================
 Service		org.bluez.mesh
 Interface	org.bluez.mesh.Network
@@ -12,8 +12,8 @@ Methods:
 		uint64 Join(object provision_agent, array{string} capabilities,
 							array{string} capabilities,
 							array{byte}[16] uuid,
-							array{string} oob_info, // can be empty if oob data is not available
-							uint32 URI_hash, //zero if does not exist
+							array{string} oob_info,
+							uint32 uri_hash,
 							array{byte} composition)
 
 			This is the first step an application to become a node on a mesh
@@ -25,14 +25,26 @@ Methods:
 			The capabilities parameter is an array of strings with the following
 			allowed values:
 			"Blink", "Beep", "Vibrate", "OutNumeric", "OutAlpha", "Push",
-			"Twist", "InNumeric", "InAlpha", "PublicOOB", "StaticOOB"
+			"Twist", "InNumeric", "InAlpha", "PublicOOB", "StaticOOB".
 
-			The UUID parameter is a 32-character string that contains
-			Device UUID.
+			The uuid parameter is a 16-byte array that contains Device UUID.
 
-			The composition parameter is a structurebyte array whose layout
+			The oob_info parameter is an array of strings with the following
+			allowed values:
+			"Other", "URI", "MachineCode2D", "BarCode", "NFC", "Number",
+			"String", "OnBox", "InBox", "OnPaper", "InManual", "OnDevice"
+			The array can be empty if oob data is not available.
+
+			The uri_hash parameter is a 4-octet value that contains URI Hash
+			data that is gnnerated as described in Mesh Profile. If no URI is,
+			available, the passed in value shall be zero.
+
+			The composition parameter is a byte array whose layout
 			follows that of the composition data as defined by Mesh Profile
-			specification.
+			specification. The daemon implements Configuration Server model.
+			The composition data array may not include the Configuration Server
+			model id in which case the model id will be implicitly aded by the
+			daemon.
 
 			In case of success, the method returns a 64-bit token. The token
 			must be preserved by the application in order to authenticate itself
@@ -49,6 +61,10 @@ Methods:
 				org.bluez.mesh.Error.Canceled,
 				org.bluez.mesh.Error.InvalidArguments
 				org.bluez.mesh.Error.Timeout
+
+		void Cancel(void)
+			Cancels an outstanding Join method. Join will return with
+			org.bluez.mesh.Error.Canceled
 
 		(object, unicast) Attach(object application, uint64 token)
 
