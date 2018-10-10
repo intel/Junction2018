@@ -18,15 +18,9 @@
  *
  */
 
-struct bt_mesh;
-struct mesh_net;
-
-struct bt_mesh *mesh_new(uint16_t index, const char *in_config_name);
-struct bt_mesh *mesh_ref(struct bt_mesh *mesh);
-void mesh_unref(struct bt_mesh *mesh);
-bool mesh_set_output(struct bt_mesh *mesh, const char *out_config_name);
+bool mesh_init(uint16_t index, const char *in_config_name);
 void mesh_cleanup(void);
+bool mesh_dbus_init(struct l_dbus *dbus);
+
 const char *mesh_status_str(uint8_t err);
 
-/* Command line testing */
-struct mesh_net *mesh_get_net(struct bt_mesh *mesh);

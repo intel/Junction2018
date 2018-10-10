@@ -18,6 +18,7 @@ mesh_sources = mesh/mesh.h mesh/mesh.c \
 				mesh/cfgmod.h mesh/cfgmod-server.c \
 				mesh/mesh-db.h mesh/mesh-db.c \
 				mesh/util.h mesh/util.c \
+				mesh/dbus.h mesh/dbus.c \
 				mesh/mesh-defs.h
 libexec_PROGRAMS += mesh/meshd
 
@@ -27,16 +28,17 @@ mesh_meshd_LDADD = src/shared/ecc.lo src/shared/queue.lo src/shared/io-ell.lo \
 				src/shared/util.lo src/shared/hci.lo src/shared/mgmt.lo \
 				@DBUS_LIBS@ @ELL_LIBS@ -ljson-c
 
-noinst_PROGRAMS += mesh/btmesh
-
-mesh_btmesh_SOURCES = $(mesh_sources) \
-						mesh/agent.h \
-						mesh/agent.c \
-						mesh/btmesh.c
-
-mesh_btmesh_LDADD = src/shared/ecc.lo src/shared/queue.lo src/shared/io-ell.lo \
-				src/shared/util.lo src/shared/hci.lo src/shared/mgmt.lo \
-				src/libshared-mainloop.la \
-				-lreadline @ELL_LIBS@ -ljson-c
+#
+# noinst_PROGRAMS += mesh/btmesh
+#
+# mesh_btmesh_SOURCES = $(mesh_sources) \
+#						mesh/agent.h \
+#						mesh/agent.c \
+#						mesh/btmesh.c
+#
+#mesh_btmesh_LDADD = src/shared/ecc.lo src/shared/queue.lo src/shared/io-ell.lo \
+#				src/shared/util.lo src/shared/hci.lo src/shared/mgmt.lo \
+#				src/libshared-mainloop.la \
+#				-lreadline @ELL_LIBS@ -ljson-c
 
 endif

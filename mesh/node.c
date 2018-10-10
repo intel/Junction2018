@@ -303,18 +303,10 @@ struct mesh_node *node_create_from_storage(struct mesh_net *net,
 	return node;
 }
 
-void node_cleanup(struct mesh_net *net)
+void node_cleanup()
 {
-	struct mesh_node *node;
-
-	if (!net)
-		return;
-	node = mesh_net_local_node_get(net);
-	if (node)
-		node_free(node);
-
+	//TODO: l_queue_foreach(nodes, save_node_config);
 	l_queue_destroy(nodes, free_node_resources);
-
 }
 
 bool node_is_provisioned(struct mesh_node *node)
@@ -848,4 +840,161 @@ element_done:
 	}
 
 	return n;
+}
+
+
+#define MIN_COMPOSITION_LEN 16
+
+bool node_parse_composition(struct mesh_node *node, uint8_t *data,
+						uint16_t len, bool local)
+{
+	struct node_composition *comp;
+	uint16_t features;
+	uint8_t num_ele;
+	bool mode;
+
+	if (!len)
+		return false;
+
+	l_debug("len %d", len);
+
+	/* For remote nodes, skip page -- We only support Page Zero */
+	if (!local) {
+		data++;
+		len--;
+	}
+
+	if (len < MIN_COMPOSITION_LEN)
+		return false;
+
+	comp = l_new(struct node_composition, 1);
+	if (!comp)
+		return false;
+
+	node->elements = l_queue_new();
+	if (!node->elements) {
+		l_free(comp);
+		return false;
+	}
+
+	comp->cid = l_get_le16(&data[0]);
+	comp->pid = l_get_le16(&data[2]);
+	comp->vid = l_get_le16(&data[4]);
+	comp->crpl = l_get_le16(&data[6]);
+	features = l_get_le16(&data[8]);
+	data += 10;
+	len -= 10;
+
+	mode = !!(features & FEATURE_PROXY);
+	node->proxy = mode ? MESH_MODE_DISABLED : MESH_MODE_UNSUPPORTED;
+
+	mode = !!(features & FEATURE_LPN);
+	node->lpn = mode ? MESH_MODE_DISABLED : MESH_MODE_UNSUPPORTED;
+
+	mode = !!(features & FEATURE_FRIEND);
+	node->friend = mode ? MESH_MODE_DISABLED : MESH_MODE_UNSUPPORTED;
+
+	mode = !!(features & FEATURE_RELAY);
+	node->relay.mode = mode ? MESH_MODE_DISABLED : MESH_MODE_UNSUPPORTED;
+
+	num_ele = 0;
+
+	do {
+		uint8_t m, v;
+		uint32_t mod_id;
+		uint16_t vendor_id;
+		struct node_element *ele;
+		struct mesh_model *mod;
+
+		ele = l_new(struct node_element, 1);
+		if (!ele)
+			return false;
+
+		ele->idx = num_ele;
+		ele->location = l_get_le16(data);
+		len -= 2;
+		data += 2;
+
+		l_queue_push_tail(node->elements, ele);
+
+		m = *data++;
+		v = *data++;
+		len -= 2;
+
+		/* Parse SIG models */
+		while (len >= 2 && m--) {
+			mod_id = l_get_le16(data);
+			mod = mesh_model_new(ele->idx, mod_id, false);
+			if (!mod) {
+				element_free(ele);
+				goto fail;
+			}
+
+			l_queue_push_tail(ele->models, mod);
+			data += 2;
+			len -= 2;
+		}
+
+		if (v && len < 4) {
+			element_free(ele);
+			goto fail;
+		}
+
+		/* Parse vendor models */
+		while (len >= 4 && v--) {
+			mod_id = l_get_le16(data + 2);
+			vendor_id = l_get_le16(data);
+			mod_id |= (vendor_id << 16);
+			mod = mesh_model_new(ele->idx, mod_id, true);
+			if (!mod) {
+				element_free(ele);
+				goto fail;
+			}
+
+			l_queue_push_tail(ele->models, mod);
+			data += 4;
+			len -= 4;
+		}
+
+		num_ele++;
+		l_queue_push_tail(node->elements, ele);
+
+	} while (len >= 6);
+
+	/* Check the consistency for the remote node */
+	if (!local && node->num_ele > num_ele)
+		goto fail;
+
+	node->comp = comp;
+	node->num_ele = num_ele;
+
+	return true;
+
+fail:
+	l_queue_destroy(node->elements, element_free);
+	l_free(comp);
+
+	return false;
+}
+
+/*
+ * This function inititlazes temporary node during provisioning.
+ * If the device is provisioned successfully, the node information
+ * is retained.
+ */
+struct mesh_node *node_init_pending(uint8_t *data, uint16_t len,
+							uint8_t uuid[16])
+{
+	struct mesh_node *node;
+
+	node = l_new(struct mesh_node, 1);
+
+	if (!node_parse_composition(node, data, len, true)) {
+		l_free(node);
+		return NULL;
+	}
+
+	memcpy(node->dev_uuid, uuid, 16);
+
+	return node;
 }

@@ -24,6 +24,7 @@ size: hard define (mesh.conf)
 	             else 1 if mask is non zero
 			else 0
 */
+struct bt_mesh;
 
 struct mesh_prov_caps {
 	uint8_t uuid[16];

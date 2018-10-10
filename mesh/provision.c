@@ -1160,3 +1160,12 @@ failure:
 	out[0] = PROV_FAILED;
 	mesh_prov_send(prov, out, 2, acp_prov_send_cmplt, prov);
 }
+
+bool acceptor_start(struct bt_mesh *mesh,
+		    const struct mesh_prov_caps *caps,
+		    uint32_t timeout, // in seconds from mesh.conf
+		    mesh_prov_acceptor_complete_func_t complete_cb,
+		    mesh_prov_acceptor_agent_req_func_t agent_cb)
+{
+	return true;
+}

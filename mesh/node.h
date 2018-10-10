@@ -30,6 +30,8 @@ struct mesh_node;
 
 struct mesh_node *node_new(void);
 void node_free(struct mesh_node *node);
+struct mesh_node *node_init_pending(uint8_t *data, uint16_t len,
+							uint8_t uuid[16]);
 uint8_t *node_uuid_get(struct mesh_node *node);
 struct mesh_node *node_find_by_addr(uint16_t addr);
 struct mesh_node *node_find_by_uuid(uint8_t uuid[16]);
@@ -44,7 +46,8 @@ bool node_set_device_key(struct mesh_node *node, uint8_t key[16]);
 const uint8_t *node_get_device_key(struct mesh_node *node);
 void node_set_num_elements(struct mesh_node *node, uint8_t num_ele);
 uint8_t node_get_num_elements(struct mesh_node *node);
-bool node_parse_composition(struct mesh_node *node, uint8_t *buf, uint16_t len);
+bool node_parse_composition(struct mesh_node *node, uint8_t *buf, uint16_t len,
+								bool local);
 struct l_queue *node_get_net_keys(struct mesh_node *node);
 struct l_queue *node_get_app_keys(struct mesh_node *node);
 bool node_add_binding(struct mesh_node *node, uint8_t ele_idx,
@@ -77,4 +80,4 @@ uint8_t node_beacon_mode_get(struct mesh_node *node);
 bool node_friend_mode_set(struct mesh_node *node, bool enable);
 uint8_t node_friend_mode_get(struct mesh_node *node);
 uint32_t node_seq_cache(struct mesh_node *node);
-void node_cleanup(struct mesh_net *net);
+void node_cleanup();

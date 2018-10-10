@@ -30,12 +30,17 @@
 #include <sys/stat.h>
 #include <ell/ell.h>
 
+#include <dbus/dbus.h>
+
 #include "lib/bluetooth.h"
 #include "lib/mgmt.h"
 
 #include "mesh/mesh.h"
 #include "mesh/net.h"
+#include "mesh/dbus.h"
 #include "mesh/storage.h"
+
+#define BLUEZ_MESH_NAME "org.bluez.mesh"
 
 static const struct option main_options[] = {
 	{ "index",	required_argument,	NULL, 'i' },
@@ -59,6 +64,40 @@ static void usage(void)
 	       "\t--help            Show %s information\n", __func__);
 }
 
+static void do_debug(const char *str, void *user_data)
+{
+	const char *prefix = user_data;
+
+	l_info("%s%s", prefix, str);
+}
+
+static void request_name_callback(struct l_dbus *dbus, bool success,
+					bool queued, void *user_data)
+{
+	l_info("Request name %s",
+		success ? "success": "failed");
+
+	if (success)
+		mesh_dbus_init(dbus);
+	else
+		l_main_quit();
+}
+
+static void ready_callback(void *user_data)
+{
+	struct l_dbus *dbus = user_data;
+
+	l_info("D-Bus ready");
+	l_dbus_name_acquire(dbus, BLUEZ_MESH_NAME, false, false, false,
+						request_name_callback, NULL);
+
+}
+
+static void disconnect_callback(void *user_data)
+{
+	l_main_quit();
+}
+
 static void signal_handler(struct l_signal *signal, uint32_t signo,
 							void *user_data)
 {
@@ -80,9 +119,10 @@ int main(int argc, char *argv[])
 {
 	int status;
 	bool detached = true;
-	struct l_signal *signal;
+	bool dbus_debug = false;
+	struct l_dbus *dbus;
+	struct l_signal *signal = NULL;
 	sigset_t mask;
-	struct bt_mesh *mesh = NULL;
 	const char *config_file = NULL;
 	int index = MGMT_INDEX_NONE;
 
@@ -95,7 +135,7 @@ int main(int argc, char *argv[])
 		int opt;
 		const char *str;
 
-		opt = getopt_long(argc, argv, "i:c:ndh", main_options, NULL);
+		opt = getopt_long(argc, argv, "i:c:ndbh", main_options, NULL);
 		if (opt < 0)
 			break;
 
@@ -108,7 +148,7 @@ int main(int argc, char *argv[])
 			if (!isdigit(*str)) {
 				l_error("Invalid controller index value");
 				status = EXIT_FAILURE;
-				goto done;
+				goto options;
 			}
 
 			index = atoi(str);
@@ -123,21 +163,24 @@ int main(int argc, char *argv[])
 		case 'c':
 			config_file = optarg;
 			break;
+		case 'b':
+			dbus_debug = true;
+			break;
 		case 'h':
 			usage();
 			status = EXIT_SUCCESS;
-			goto done;
+			goto options;
 		default:
 			usage();
 			status = EXIT_FAILURE;
-			goto done;
+			goto options;
 		}
 	}
 
-	if (!mesh_new(index, config_file)) {
+	if (!mesh_init(index, config_file)) {
 		l_error("Failed to initialize mesh");
 		status = EXIT_FAILURE;
-		goto done;
+		goto options;
 	}
 
 	sigemptyset(&mask);
@@ -146,6 +189,18 @@ int main(int argc, char *argv[])
 	signal = l_signal_create(&mask, signal_handler, NULL, NULL);
 
 	umask(0077);
+
+	dbus = l_dbus_new_default(L_DBUS_SYSTEM_BUS);
+	if (!dbus) {
+		l_error("unable to connect to D-Bus");
+		status = EXIT_FAILURE;
+		goto options;
+	}
+
+	if (dbus_debug)
+		l_dbus_set_debug(dbus, do_debug, "[DBUS] ", NULL);
+	l_dbus_set_ready_handler(dbus, ready_callback, dbus, NULL);
+	l_dbus_set_disconnect_handler(dbus, disconnect_callback, NULL, NULL);
 
 	if (detached) {
 		if (daemon(0, 0)) {
@@ -157,10 +212,13 @@ int main(int argc, char *argv[])
 
 	status = l_main_run();
 
-	l_signal_remove(signal);
-
 done:
-	mesh_unref(mesh);
+	l_dbus_destroy(dbus);
+
+options:
+	if (signal)
+		l_signal_remove(signal);
+
 	mesh_cleanup();
 	l_main_exit();
 

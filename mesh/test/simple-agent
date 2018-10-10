@@ -1,0 +1,78 @@
+#!/usr/bin/python
+
+from __future__ import absolute_import, print_function, unicode_literals
+
+from optparse import OptionParser
+import sys
+import array
+import dbus
+import dbus.service
+import dbus.mainloop.glib
+try:
+  from gi.repository import GObject
+except ImportError:
+  import gobject as GObject
+
+AGENT_INTERFACE = 'org.bluez.mesh.Agent'
+AGENT_PATH = "/test/agent"
+
+bus = None
+device_obj = None
+dev_path = None
+
+def ask(prompt):
+	try:
+		return raw_input(prompt)
+	except:
+		return input(prompt)
+
+class Rejected(dbus.DBusException):
+	_dbus_error_name = "org.bluez.Error.Rejected"
+
+class Agent(dbus.service.Object):
+	exit_on_release = True
+
+	def set_exit_on_release(self, exit_on_release):
+		self.exit_on_release = exit_on_release
+
+	@dbus.service.method(AGENT_INTERFACE,
+					in_signature="", out_signature="")
+	def Release(self):
+		print("Release")
+		if self.exit_on_release:
+			mainloop.quit()
+
+	@dbus.service.method(AGENT_INTERFACE,
+					in_signature="", out_signature="s")
+	def PromptNumeric(self):
+		print("PromptNumeric")
+		return ask("Enter a value displayed by provisioner: ")
+
+	def Cancel(self):
+		print("Cancel")
+
+if __name__ == '__main__':
+	dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+
+	bus = dbus.SystemBus()
+
+	capability = "InNumeric"
+        uuid = array()
+	parser = OptionParser()
+
+	parser.add_option("-c", "--capability", action="store",
+					type="string", dest="capability")
+	parser.add_option("-t", "--timeout", action="store",
+					type="int", dest="timeout",
+					default=60000)
+	(options, args) = parser.parse_args()
+	if options.capability:
+		capability  = options.capability
+
+	path = "/test/agent"
+	agent = Agent(bus, path)
+
+	mainloop = GObject.MainLoop()
+
+	mainloop.run()
+

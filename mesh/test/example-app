@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+import dbus
+import sys
+
+try:
+  from gi.repository import GObject
+except ImportError:
+  import gobject as GObject
+from dbus.mainloop.glib import DBusGMainLoop
+
+bus = None
+mainloop = None
+
+MESH_SERVICE_NAME = 'org.bluez.mesh'
+DBUS_PROP_IFACE =    'org.freedesktop.DBus.Properties'
+
+MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
+
+token = 0
+uuid = bytearray.fromhex("aabbccddeeff00112233445566778899")
+agent = "/test/agent"
+caps = ["OutNumeric"]
+oob_info = [""]
+uri_hash = 0
+composition = bytearray.fromhex("0200100001000a000d000100020000000110")
+
+def generic_error_cb(error):
+    print('D-Bus call failed: ' + str(error))
+    mainloop.quit()
+
+
+def interfaces_removed_cb(object_path, interfaces):
+    if not mesh_net:
+        return
+
+    if object_path == mesh_net[2]:
+        print('Service was removed')
+        mainloop.quit()
+
+
+def main():
+
+    DBusGMainLoop(set_as_default=True)
+
+    global bus
+    bus = dbus.SystemBus()
+    global mainloop
+    mainloop = GObject.MainLoop()
+
+    mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME, "/org/bluez/mesh"), MESH_NETWORK_IFACE)
+    mesh_net.connect_to_signal('InterfacesRemoved', interfaces_removed_cb)
+
+    mesh_net.Join(agent, caps, uuid, oob_info, uri_hash, composition)
+    mesh_net.Cancel(agent, caps, uuid, oob_info, uri_hash, composition)
+
+    mainloop.run()
+
+
+if __name__ == '__main__':
+    main()
+
