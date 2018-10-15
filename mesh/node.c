@@ -922,8 +922,6 @@ bool node_parse_composition(struct mesh_node *node, uint8_t *data,
 		len -= 2;
 		data += 2;
 
-		l_queue_push_tail(node->elements, ele);
-
 		m = *data++;
 		v = *data++;
 		len -= 2;
