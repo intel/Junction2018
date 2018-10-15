@@ -303,10 +303,17 @@ struct mesh_node *node_create_from_storage(struct mesh_net *net,
 	return node;
 }
 
-void node_cleanup()
+void node_cleanup(void *data)
 {
-	//TODO: l_queue_foreach(nodes, save_node_config);
-	l_queue_destroy(nodes, free_node_resources);
+	struct mesh_node *node = data;
+
+	//TODO: save_node_config;
+	free_node_resources(node);
+}
+
+void node_cleanup_all(void)
+{
+	l_queue_destroy(nodes, node_cleanup);
 }
 
 bool node_is_provisioned(struct mesh_node *node)

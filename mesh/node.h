@@ -80,4 +80,5 @@ uint8_t node_beacon_mode_get(struct mesh_node *node);
 bool node_friend_mode_set(struct mesh_node *node, bool enable);
 uint8_t node_friend_mode_get(struct mesh_node *node);
 uint32_t node_seq_cache(struct mesh_node *node);
-void node_cleanup();
+void node_cleanup(void *node);
+void node_cleanup_all(void);

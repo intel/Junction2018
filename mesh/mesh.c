@@ -306,6 +306,7 @@ void mesh_cleanup(void)
 	mesh_io_destroy(mesh.io);
 	mgmt_unref(mgmt_mesh);
 
+	node_cleanup_all();
 	l_queue_destroy(controllers, NULL);
 }
 
