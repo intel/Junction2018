@@ -41,6 +41,7 @@
 #include "mesh/net.h"
 #include "mesh/appkey.h"
 #include "mesh/model.h"
+#include "mesh/cfgmod.h"
 #include "mesh/storage.h"
 
 /*
@@ -63,9 +64,14 @@ static bool read_local_node_cb(struct mesh_db_node *db_node, void *user_data)
 	if (!net)
 		return false;
 
-	node = node_create_from_storage(net, db_node, true);
+	node = node_new();
 	if (!node)
 		return false;
+
+	if (!node_init_from_storage(node, net, db_node, true)) {
+		node_cleanup(node);
+		return false;
+	}
 
 	mesh_net_local_node_set(net, node, db_node->provisioner);
 	seq_number = node_get_sequence_number(node);
@@ -102,6 +108,12 @@ static bool read_local_node_cb(struct mesh_db_node *db_node, void *user_data)
 	uuid = node_uuid_get(node);
 	if (uuid)
 		mesh_net_id_uuid_set(net, uuid);
+
+	mesh_net_provisioned_set(net, true);
+
+	/* Register foundational models */
+	mesh_config_srv_init(net, PRIMARY_ELE_IDX);
+
 	return true;
 }
 
@@ -162,7 +174,7 @@ static bool parse_local_node(struct mesh_net *net, json_object *jnode)
 	return true;
 }
 
-static bool parse_config(struct mesh_net *net, const char *config_name)
+static bool parse_config(const char *config_name)
 {
 	int fd;
 	char *str;
@@ -171,6 +183,7 @@ static bool parse_config(struct mesh_net *net, const char *config_name)
 	ssize_t sz;
 	json_object *jnode = NULL;
 	bool result = false;
+	struct mesh_net *net;
 
 	if (!config_name)
 		return false;
@@ -200,6 +213,8 @@ static bool parse_config(struct mesh_net *net, const char *config_name)
 	if (!jnode)
 		goto done;
 
+	net = mesh_net_new();
+
 	mesh_net_jconfig_set(net, jnode);
 
 	result = parse_local_node(net, jnode);
@@ -220,32 +235,28 @@ done:
 	return result;
 }
 
-bool storage_parse_config(struct mesh_net *net, const char *config_name)
+bool storage_parse_config(const char *config_name)
 {
-	bool result = false;
+	size_t len = strlen(config_name) + 5;
+	char *bak = l_malloc(len);
+	bool result;
+
 	if (!config_name)
 		return false;
 
-	result = parse_config(net, config_name);
+	if (parse_config(config_name))
+		return true;
 
-	if (!result) {
-		size_t len = strlen(config_name) + 5;
-		char *bak = l_malloc(len);
+	/* Fall-back to Backup version */
+	strncpy(bak, config_name, len);
+	bak = strncat(bak, ".bak", 5);
 
-		/* Fall-back to Backup version */
-		strncpy(bak, config_name, len);
-		bak = strncat(bak, ".bak", 5);
+	remove(config_name);
+	rename(bak, config_name);
 
-		remove(config_name);
-		rename(bak, config_name);
+	result = parse_config(config_name);
 
-		result = parse_config(net, config_name);
-
-		l_free(bak);
-	}
-
-	if (result)
-		mesh_net_provisioned_set(net, true);
+	l_free(bak);
 
 	return result;
 }

@@ -35,7 +35,6 @@
 #include "mesh/node.h"
 #include "mesh/net.h"
 #include "mesh/storage.h"
-#include "mesh/cfgmod.h"
 #include "mesh/provision.h"
 #include "mesh/model.h"
 #include "mesh/dbus.h"
@@ -51,9 +50,6 @@
  */
 #define DEFAULT_PROV_TIMEOUT 60
 #define DEFAULT_ALGORITHMS 0x0001
-
-// Temporary for testing;
-static struct mesh_net *net;
 
 //TODO: add more default values
 
@@ -131,9 +127,8 @@ static void start_io(uint16_t index)
 
 	l_debug("Started mesh (io %p) on hci %u", mesh.io, index);
 
-	// Temorary. For testing
-	if (net)
-		mesh_net_attach(net, io);
+	node_attach_io(io);
+
 	//TODO: register callbacks here
 }
 
@@ -248,15 +243,7 @@ static void read_index_list_cb(uint8_t status, uint16_t length,
 // TODO: change to load from predefined directory
 static bool load_config(const char *in_config_name)
 {
-	net = mesh_net_new();
-
-	if (!storage_parse_config(net, in_config_name))
-		return false;
-
-	/* Register foundational models */
-	mesh_config_srv_init(net, PRIMARY_ELE_IDX);
-
-	return true;
+	return storage_parse_config(in_config_name);
 }
 
 static bool init_mgmt(void)

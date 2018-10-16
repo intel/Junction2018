@@ -28,6 +28,7 @@
 #include "mesh/mesh-defs.h"
 
 #include "mesh/mesh.h"
+#include "mesh/mesh-io.h"
 #include "mesh/net.h"
 #include "mesh/node.h"
 #include "mesh/storage.h"
@@ -141,8 +142,8 @@ struct mesh_node *node_new(void)
 
 	node = l_new(struct mesh_node, 1);
 
-	if (!node)
-		return NULL;
+	if (!nodes)
+		nodes = l_queue_new();
 
 	l_queue_push_tail(nodes, node);
 
@@ -242,26 +243,15 @@ static bool add_elements(struct mesh_node *node, struct mesh_db_node *db_node)
 	return true;
 }
 
-struct mesh_node *node_create_from_storage(struct mesh_net *net,
-						struct mesh_db_node *db_node,
-								bool local)
+bool node_init_from_storage(struct mesh_node *node, struct mesh_net *net,
+				struct mesh_db_node *db_node, bool local)
 {
-	struct mesh_node *node;
 	unsigned int num_ele;
 
 	if (local && !net)
-		return NULL;
-
-	node = node_new();
-	if (!node)
-		return NULL;
+		return false;
 
 	node->comp = l_new(struct node_composition, 1);
-	if (!node->comp) {
-		node_free(node);
-		return NULL;
-	}
-
 	node->comp->cid = db_node->cid;
 	node->comp->pid = db_node->pid;
 	node->comp->vid = db_node->vid;
@@ -276,22 +266,18 @@ struct mesh_node *node_create_from_storage(struct mesh_net *net,
 	node->relay.interval = db_node->modes.relay.interval;
 	node->beacon = db_node->modes.beacon;
 
-	l_info("relay %2.2x, proxy %2.2x, lpn %2.2x, friend %2.2x",
-	       node->relay.mode, node->proxy, node->friend, node->lpn);
+	l_debug("relay %2.2x, proxy %2.2x, lpn %2.2x, friend %2.2x",
+			node->relay.mode, node->proxy, node->friend, node->lpn);
 	node->ttl = db_node->ttl;
 	node->seq_number = db_node->seq_number;
 
 	num_ele = l_queue_length(db_node->elements);
-	if (num_ele > 0xff) {
-		node_free(node);
-		return NULL;
-	}
+	if (num_ele > 0xff)
+		return false;
 
 	node->num_ele = num_ele;
-	if (num_ele != 0 && !add_elements(node, db_node)) {
-		node_free(node);
-		return NULL;
-	}
+	if (num_ele != 0 && !add_elements(node, db_node))
+		return false;
 
 	node->primary = db_node->unicast;
 
@@ -300,7 +286,7 @@ struct mesh_node *node_create_from_storage(struct mesh_net *net,
 	if (local)
 		node->net = mesh_net_ref(net);
 
-	return node;
+	return true;
 }
 
 void node_cleanup(void *data)
@@ -1002,4 +988,19 @@ struct mesh_node *node_init_pending(uint8_t *data, uint16_t len,
 	memcpy(node->dev_uuid, uuid, 16);
 
 	return node;
+}
+
+static void attach_io(void *a, void *b)
+{
+	struct mesh_node *node = a;
+	struct mesh_io *io = b;
+
+	if (node->net)
+		mesh_net_attach(node->net, io);
+}
+
+/* Register callbacks for io */
+void node_attach_io(struct mesh_io *io)
+{
+	l_queue_foreach(nodes, attach_io, io);
 }

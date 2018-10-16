@@ -22,6 +22,7 @@
 
 struct mesh_net;
 struct mesh_node;
+struct mesh_io;
 
 /* To prevent local node JSON cache thrashing, minimum update times */
 #define MIN_SEQ_TRIGGER	32
@@ -64,9 +65,8 @@ struct l_queue *node_get_element_models(struct mesh_node *node, uint8_t ele_idx,
 struct mesh_model *node_get_model(struct mesh_node *node, uint8_t ele_idx,
 						uint32_t id, int *status);
 uint16_t node_get_crpl(struct mesh_node *node);
-struct mesh_node *node_create_from_storage(struct mesh_net *net,
-						struct mesh_db_node *db_node,
-								bool local);
+bool node_init_from_storage(struct mesh_node *node, struct mesh_net *net,
+				struct mesh_db_node *db_node, bool local);
 uint16_t node_generate_comp(struct mesh_node *node, uint8_t *buf, uint16_t sz);
 uint8_t node_lpn_mode_get(struct mesh_node *node);
 bool node_relay_mode_set(struct mesh_node *node, bool enable, uint8_t cnt,
@@ -80,5 +80,6 @@ uint8_t node_beacon_mode_get(struct mesh_node *node);
 bool node_friend_mode_set(struct mesh_node *node, bool enable);
 uint8_t node_friend_mode_get(struct mesh_node *node);
 uint32_t node_seq_cache(struct mesh_node *node);
+void node_attach_io(struct mesh_io *io);
 void node_cleanup(void *node);
 void node_cleanup_all(void);

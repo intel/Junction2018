@@ -20,7 +20,7 @@
 
 struct mesh_net;
 
-bool storage_parse_config(struct mesh_net *net, const char *config_name);
+bool storage_parse_config(const char *config_name);
 bool storage_save_config(struct mesh_net *net, const char *config_name,
 			bool no_wait, mesh_status_func_t cb, void *user_data);
 bool storage_save_new_config(struct mesh_net *net, const char *config_name,
