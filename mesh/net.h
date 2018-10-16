@@ -259,7 +259,7 @@ typedef void (*mesh_net_status_func_t)(uint16_t remote, uint8_t status,
 					void *data, uint16_t size,
 					void *user_data);
 
-struct mesh_net *mesh_net_new(uint16_t index);
+struct mesh_net *mesh_net_new(void);
 struct mesh_net *mesh_net_ref(struct mesh_net *net);
 void mesh_net_unref(struct mesh_net *net);
 void mesh_net_flush_msg_queues(struct mesh_net *net);

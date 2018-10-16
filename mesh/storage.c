@@ -162,68 +162,7 @@ static bool parse_local_node(struct mesh_net *net, json_object *jnode)
 	return true;
 }
 
-static bool read_unprov_device_cb(struct mesh_db_node *db_node, void *user_data)
-{
-	struct mesh_net *net = user_data;
-	struct mesh_node *node;
-	uint16_t crpl;
-	uint8_t *uuid;
-
-	if (!net)
-		return false;
-
-	node = node_create_from_storage(net, db_node, true);
-
-	if (!node)
-		return false;
-
-	mesh_net_local_node_set(net, node, db_node->provisioner);
-	crpl = node_get_crpl(node);
-	mesh_net_set_crpl(net, crpl);
-
-	uuid = node_uuid_get(node);
-	if (uuid)
-		mesh_net_id_uuid_set(net, uuid);
-
-	return true;
-}
-
-static bool parse_unprovisioned_device(struct mesh_net *net, json_object *jnode)
-{
-	struct mesh_db_prov prov;
-	struct mesh_net_prov_caps *caps;
-	struct mesh_node *node;
-
-	/* Node composition/configuration info */
-	if (!mesh_db_read_unprovisioned_device(jnode,
-					read_unprov_device_cb, net))
-		return false;
-
-	if (!mesh_db_read_prov_info(jnode, &prov))
-		return false;
-
-	caps = mesh_net_prov_caps_get(net);
-	if (!caps)
-		return false;
-
-	node = mesh_net_local_node_get(net);
-	if (!node)
-		return false;
-
-	caps->num_ele = node_get_num_elements(node);
-	l_put_le16(prov.algorithm, &caps->algorithms);
-	caps->pub_type = prov.pub_type;
-	caps->static_type = prov.static_type;
-	caps->output_size = prov.output_oob.size;
-	l_put_le16(prov.output_oob.actions, &caps->output_action);
-	caps->input_size = prov.input_oob.size;
-	l_put_le16(prov.input_oob.actions, &caps->input_action);
-
-	return mesh_net_priv_key_set(net, prov.priv_key);
-}
-
-static bool parse_config(struct mesh_net *net, const char *config_name,
-							bool unprovisioned)
+static bool parse_config(struct mesh_net *net, const char *config_name)
 {
 	int fd;
 	char *str;
@@ -263,10 +202,7 @@ static bool parse_config(struct mesh_net *net, const char *config_name,
 
 	mesh_net_jconfig_set(net, jnode);
 
-	if (!unprovisioned)
-		result = parse_local_node(net, jnode);
-	else
-		result = parse_unprovisioned_device(net, jnode);
+	result = parse_local_node(net, jnode);
 
 	if (!result) {
 		storage_release(net);
@@ -275,8 +211,7 @@ static bool parse_config(struct mesh_net *net, const char *config_name,
 
 	mesh_net_cfg_file_get(net, &out);
 	if (!out)
-		mesh_net_cfg_file_set(net, !unprovisioned ?
-					config_name : NODE_CONGIGURATION_FILE);
+		mesh_net_cfg_file_set(net, config_name);
 done:
 	close(fd);
 	if (str)
@@ -288,14 +223,10 @@ done:
 bool storage_parse_config(struct mesh_net *net, const char *config_name)
 {
 	bool result = false;
-	bool unprovisioned = !config_name;
+	if (!config_name)
+		return false;
 
-	if (unprovisioned) {
-		result = parse_config(net, DEVICE_COMPOSITION_FILE, true);
-		goto done;
-	}
-
-	result = parse_config(net, config_name, false);
+	result = parse_config(net, config_name);
 
 	if (!result) {
 		size_t len = strlen(config_name) + 5;
@@ -308,21 +239,13 @@ bool storage_parse_config(struct mesh_net *net, const char *config_name)
 		remove(config_name);
 		rename(bak, config_name);
 
-		result = parse_config(net, config_name, false);
+		result = parse_config(net, config_name);
 
 		l_free(bak);
 	}
 
-	/* If configuration read fails, try as unprovisioned device */
-	if (!result) {
-		l_info("Parse configuration failed, trying unprovisioned");
-		unprovisioned = true;
-		result = parse_config(net, DEVICE_COMPOSITION_FILE, true);
-	}
-
-done:
 	if (result)
-		mesh_net_provisioned_set(net, !unprovisioned);
+		mesh_net_provisioned_set(net, true);
 
 	return result;
 }

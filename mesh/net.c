@@ -646,7 +646,7 @@ static void start_network_beacon(void *a, void *b)
 				network_beacon_timeout, subnet, NULL);
 }
 
-struct mesh_net *mesh_net_new(uint16_t index)
+struct mesh_net *mesh_net_new(void)
 {
 	struct mesh_net *net;
 
@@ -2918,7 +2918,7 @@ bool mesh_net_attach(struct mesh_net *net, struct mesh_io *io)
 
 	net->io = io;
 	if (net->provisioned) {
-
+		l_info("Register io cb");
 		mesh_io_register_recv_cb(io, MESH_IO_FILTER_BEACON,
 							beacon_recv, net);
 		mesh_io_register_recv_cb(io, MESH_IO_FILTER_NET,
