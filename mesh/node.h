@@ -81,5 +81,6 @@ bool node_friend_mode_set(struct mesh_node *node, bool enable);
 uint8_t node_friend_mode_get(struct mesh_node *node);
 uint32_t node_seq_cache(struct mesh_node *node);
 void node_attach_io(struct mesh_io *io);
+void node_id_set(struct mesh_node *node, uint16_t node_id);
 void node_cleanup(void *node);
 void node_cleanup_all(void);

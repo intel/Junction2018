@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -50,6 +51,8 @@
  */
 #define DEVICE_COMPOSITION_FILE "../config/composition.json"
 #define NODE_CONGIGURATION_FILE "../config/configuration.json"
+
+static const char *storage_dir;
 
 static bool read_local_node_cb(struct mesh_db_node *db_node, void *user_data)
 {
@@ -143,7 +146,8 @@ static bool read_app_keys_cb(uint16_t net_idx, uint16_t app_idx, uint8_t *key,
 	return appkey_key_init(net, net_idx, app_idx, key, new_key);
 }
 
-static bool parse_local_node(struct mesh_net *net, json_object *jnode)
+static bool parse_local_node(struct mesh_net *net, json_object *jnode,
+							uint16_t node_id)
 {
 	bool bvalue;
 	uint32_t iv_index;
@@ -169,26 +173,26 @@ static bool parse_local_node(struct mesh_net *net, json_object *jnode)
 		!node_set_device_key(mesh_net_local_node_get(net), key_buf))
 		return false;
 
+	node_id_set(mesh_net_local_node_get(net), node_id);
+
 	mesh_db_read_app_keys(jnode, read_app_keys_cb, net);
 
 	return true;
 }
 
-static bool parse_config(const char *config_name)
+static bool parse_local_config(char *in_file, char *out_file, uint16_t node_id)
 {
 	int fd;
 	char *str;
-	const char *out;
 	struct stat st;
 	ssize_t sz;
 	json_object *jnode = NULL;
 	bool result = false;
 	struct mesh_net *net;
 
-	if (!config_name)
-		return false;
+	l_info("Loading configuration from %s", in_file);
 
-	fd = open(config_name, O_RDONLY);
+	fd = open(in_file, O_RDONLY);
 	if (!fd)
 		return false;
 
@@ -205,7 +209,7 @@ static bool parse_config(const char *config_name)
 
 	sz = read(fd, str, st.st_size);
 	if (sz != st.st_size) {
-		l_error("Failed to read configuration file");
+		l_error("Failed to read configuration file %s", in_file);
 		goto done;
 	}
 
@@ -217,46 +221,18 @@ static bool parse_config(const char *config_name)
 
 	mesh_net_jconfig_set(net, jnode);
 
-	result = parse_local_node(net, jnode);
+	result = parse_local_node(net, jnode, node_id);
 
 	if (!result) {
 		storage_release(net);
 		goto done;
 	}
 
-	mesh_net_cfg_file_get(net, &out);
-	if (!out)
-		mesh_net_cfg_file_set(net, config_name);
+	mesh_net_cfg_file_set(net, out_file);
 done:
 	close(fd);
 	if (str)
 		l_free(str);
-
-	return result;
-}
-
-bool storage_parse_config(const char *config_name)
-{
-	size_t len = strlen(config_name) + 5;
-	char *bak = l_malloc(len);
-	bool result;
-
-	if (!config_name)
-		return false;
-
-	if (parse_config(config_name))
-		return true;
-
-	/* Fall-back to Backup version */
-	strncpy(bak, config_name, len);
-	bak = strncat(bak, ".bak", 5);
-
-	remove(config_name);
-	rename(bak, config_name);
-
-	result = parse_config(config_name);
-
-	l_free(bak);
 
 	return result;
 }
@@ -598,4 +574,57 @@ void storage_release(struct mesh_net *net)
 		json_object_put(jnode);
 
 	mesh_net_jconfig_set(net, NULL);
+}
+
+bool storage_load_nodes(const char *dir_name)
+{
+	DIR *dir;
+	struct dirent *entry;
+
+	dir = opendir(dir_name);
+	if (!dir) {
+		l_error("Failed to open mesh node storage directory: %s",
+								dir_name);
+		return false;
+	}
+
+	storage_dir = dir_name;
+
+	while ((entry = readdir(dir)) != NULL) {
+		char name_buf[PATH_MAX];
+		char *filename;
+		uint32_t node_id;
+		size_t len;
+
+		if (entry->d_type != DT_DIR)
+			continue;
+
+		if (sscanf(entry->d_name, "%04x", &node_id) != 1)
+			continue;
+
+		snprintf(name_buf, PATH_MAX, "%s/%s/node.json", dir_name,
+								entry->d_name);
+
+		len = strlen(name_buf);
+		filename = l_malloc(len + 1);
+
+		strncpy(filename, name_buf, len + 1);
+
+		if (parse_local_config(name_buf, filename, node_id))
+			continue;
+
+		/* Fall-back to Backup version */
+		snprintf(name_buf, PATH_MAX, "%s/%s/node.json.bak", dir_name,
+								entry->d_name);
+
+		if (parse_local_config(name_buf, filename, node_id)) {
+			remove(filename);
+			rename(name_buf, filename);
+			continue;
+		}
+
+		l_free(filename);
+	}
+
+	return true;
 }

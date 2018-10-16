@@ -240,12 +240,6 @@ static void read_index_list_cb(uint8_t status, uint16_t length,
 	}
 }
 
-// TODO: change to load from predefined directory
-static bool load_config(const char *in_config_name)
-{
-	return storage_parse_config(in_config_name);
-}
-
 static bool init_mgmt(void)
 {
 	mgmt_mesh = mgmt_new_default();
@@ -267,7 +261,7 @@ static bool init_mgmt(void)
 	return true;
 }
 
-bool mesh_init(uint16_t index, const char *config_file)
+bool mesh_init(uint16_t index, const char *config_dir)
 {
 	if (initialized)
 		return true;
@@ -279,10 +273,12 @@ bool mesh_init(uint16_t index, const char *config_file)
 
 	mesh.req_index = index;
 
-	if (!load_config(config_file)) {
-		l_error("Failed to load mesh configuration: %s", config_file);
+	if (!config_dir)
+		config_dir = MESH_STORAGEDIR;
+
+	l_info("Loading node configuration from %s", config_dir);
+	if (!storage_load_nodes(config_dir))
 		return false;
-	}
 
 	l_debug("send read index_list");
 	if (mgmt_send(mgmt_mesh, MGMT_OP_READ_INDEX_LIST,

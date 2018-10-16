@@ -58,7 +58,7 @@ static void usage(void)
 	       "\tmeshd [options]\n");
 	l_info("Options:\n"
 	       "\t--index <hcinum>  Use specified controller\n"
-	       "\t--config          Configuration file\n"
+	       "\t--config          Configuration directory\n"
 	       "\t--nodetach        Run in foreground\n"
 	       "\t--debug           Enable debug output\n"
 	       "\t--help            Show %s information\n", __func__);
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
 	struct l_dbus *dbus;
 	struct l_signal *signal = NULL;
 	sigset_t mask;
-	const char *config_file = NULL;
+	const char *config_dir = NULL;
 	int index = MGMT_INDEX_NONE;
 
 	if (!l_main_init())
@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
 			l_debug_enable("*");
 			break;
 		case 'c':
-			config_file = optarg;
+			config_dir = optarg;
 			break;
 		case 'b':
 			dbus_debug = true;
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (!mesh_init(index, config_file)) {
+	if (!mesh_init(index, config_dir)) {
 		l_error("Failed to initialize mesh");
 		status = EXIT_FAILURE;
 		goto options;

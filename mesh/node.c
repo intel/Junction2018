@@ -58,6 +58,7 @@ struct mesh_node {
 	time_t upd_sec;
 	uint32_t seq_number;
 	uint32_t seq_min_cache;
+	uint16_t id;
 	uint16_t primary;
 	uint16_t num_ele;
 	uint8_t dev_uuid[16];
@@ -988,6 +989,12 @@ struct mesh_node *node_init_pending(uint8_t *data, uint16_t len,
 	memcpy(node->dev_uuid, uuid, 16);
 
 	return node;
+}
+
+void node_id_set(struct mesh_node *node, uint16_t id)
+{
+	if (node)
+		node->id = id;
 }
 
 static void attach_io(void *a, void *b)
