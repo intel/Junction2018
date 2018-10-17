@@ -90,23 +90,6 @@ static bool simple_match(const void *a, const void *b)
 	return a == b;
 }
 
-#if 0 // Move to node.c
-static void save_exit_config(struct bt_mesh *mesh)
-{
-	const char *cfg_filename;
-
-	if (!mesh_net_cfg_file_get(mesh->net, &cfg_filename) || !cfg_filename)
-		return;
-
-	/* Preserve the last sequence number before saving configuration */
-	storage_local_write_sequence_number(mesh->net,
-					mesh_net_get_seq_num(mesh->net));
-
-	if (storage_save_config(mesh->net, cfg_filename, true, NULL, NULL))
-		l_info("Saved final configuration to %s", cfg_filename);
-}
-#endif
-
 static void start_io(uint16_t index)
 {
 	struct mesh_io *io;

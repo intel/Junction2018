@@ -293,8 +293,21 @@ bool node_init_from_storage(struct mesh_node *node, struct mesh_net *net,
 void node_cleanup(void *data)
 {
 	struct mesh_node *node = data;
+	struct mesh_net *net = node->net;
+	const char *cfg_filename;
 
-	//TODO: save_node_config;
+	/* Save local node configuration */
+	if (net) {
+		mesh_net_cfg_file_get(net, &cfg_filename);
+
+		/* Preserve the last sequence number */
+		storage_local_write_sequence_number(net,
+						    mesh_net_get_seq_num(net));
+
+		if (storage_save_config(net, cfg_filename, true, NULL, NULL))
+			l_info("Saved final configuration to %s", cfg_filename);
+	}
+
 	free_node_resources(node);
 }
 
