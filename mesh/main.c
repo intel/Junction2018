@@ -202,6 +202,12 @@ int main(int argc, char *argv[])
 	l_dbus_set_ready_handler(dbus, ready_callback, dbus, NULL);
 	l_dbus_set_disconnect_handler(dbus, disconnect_callback, NULL, NULL);
 
+	if (!l_dbus_object_manager_enable(dbus)) {
+		l_error("Failed to enable Object Manager");
+		status = EXIT_FAILURE;
+		goto done;
+	}
+
 	if (detached) {
 		if (daemon(0, 0)) {
 			perror("Failed to start meshd daemon");

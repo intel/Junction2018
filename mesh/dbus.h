@@ -28,6 +28,8 @@ uint32_t dbus_disconnect_watch_add(struct l_dbus *dbus, const char *name,
 bool dbus_disconnect_watch_remove(struct l_dbus *dbus, uint32_t id);
 uint32_t dbus_get_byte_array(struct l_dbus_message_iter *array, uint8_t *buf,
 							uint32_t max_len);
+bool dbus_match_interface(struct l_dbus_message_iter *interfaces,
+							const char *match);
 
 struct l_dbus_message *dbus_error_invalid_args(struct l_dbus_message *msg,
 						const char *description);
@@ -36,4 +38,6 @@ struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg,
 struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
 						const char *description);
 struct l_dbus_message *dbus_error_failed(struct l_dbus_message *msg,
+						const char *description);
+struct l_dbus_message *dbus_error_not_authorized(struct l_dbus_message *msg,
 						const char *description);

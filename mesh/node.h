@@ -29,6 +29,9 @@ struct mesh_io;
 #define MIN_SEQ_CACHE		(2*MIN_SEQ_TRIGGER)
 #define MIN_SEQ_CACHE_TIME	(5*60)
 
+typedef void (*node_attach_ready_func_t) (int status, char * node_path,
+								uint64_t token);
+
 struct mesh_node *node_new(void);
 void node_free(struct mesh_node *node);
 struct mesh_node *node_init_pending(uint8_t *data, uint16_t len,
@@ -81,6 +84,9 @@ bool node_friend_mode_set(struct mesh_node *node, bool enable);
 uint8_t node_friend_mode_get(struct mesh_node *node);
 uint32_t node_seq_cache(struct mesh_node *node);
 void node_attach_io(struct mesh_io *io);
+void node_attach(const char *app_path, const char *sender, uint64_t token,
+						node_attach_ready_func_t cb);
 void node_id_set(struct mesh_node *node, uint16_t node_id);
+bool node_dbus_init(struct l_dbus *bus);
 void node_cleanup(void *node);
 void node_cleanup_all(void);

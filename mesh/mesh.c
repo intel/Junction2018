@@ -38,9 +38,10 @@
 #include "mesh/provision.h"
 #include "mesh/model.h"
 #include "mesh/dbus.h"
+#include "mesh/error.h"
 #include "mesh/mesh.h"
 
-#define BLUEZ_MESH_NETWORK_INTERFACE "org.bluez.mesh.Network"
+#define MESH_NETWORK_INTERFACE "org.bluez.mesh.Network"
 
 #define MESH_COMP_MAX_LEN 378
 
@@ -76,14 +77,22 @@ struct join_data{
 	uint8_t composition[MESH_COMP_MAX_LEN];
 };
 
+struct attach_data {
+	uint64_t token;
+	struct l_dbus_message *msg;
+	const char *app;
+};
+
 static struct bt_mesh mesh;
 static struct l_queue *controllers;
 static struct mgmt *mgmt_mesh;
 static bool initialized;
 
-/* We allow only one outstanding provisionee request */
+/* We allow only one outstanding Join request */
 static struct join_data *join_pending;
 
+/* Pending Attach requests */
+static struct l_queue *attach_queue;
 
 static bool simple_match(const void *a, const void *b)
 {
@@ -260,6 +269,7 @@ bool mesh_init(uint16_t index, const char *config_dir)
 		config_dir = MESH_STORAGEDIR;
 
 	l_info("Loading node configuration from %s", config_dir);
+
 	if (!storage_load_nodes(config_dir))
 		return false;
 
@@ -272,13 +282,36 @@ bool mesh_init(uint16_t index, const char *config_dir)
 	return true;
 }
 
+static void attach_exit(void *data)
+{
+	struct l_dbus_message *reply;
+	struct attach_data *pending = data;
+
+	reply = dbus_error_failed(pending->msg, "Failed. Exiting");
+	l_dbus_send(dbus_get_bus(), reply);
+	l_dbus_message_unref(pending->msg);
+	l_free(pending);
+}
+
 void mesh_cleanup(void)
 {
+	struct l_dbus_message *reply;
+
 	mesh_io_destroy(mesh.io);
 	mgmt_unref(mgmt_mesh);
 
+	if (join_pending) {
+		reply = dbus_error_failed(join_pending->msg, "Failed. Exiting");
+		l_dbus_send(dbus_get_bus(), reply);
+		l_dbus_message_unref(join_pending->msg);
+		l_free(join_pending);
+	}
+
+	l_queue_destroy(attach_queue, attach_exit);
+
 	node_cleanup_all();
 	l_queue_destroy(controllers, NULL);
+	l_dbus_unregister_interface(dbus_get_bus(), MESH_NETWORK_INTERFACE);
 }
 
 const char *mesh_status_str(uint8_t err)
@@ -418,7 +451,8 @@ static void prov_complete_cb(struct bt_mesh *mesh, uint8_t status,
 	//TODO agent_cancel(join_pending.agent);
 
 	if (status != MESH_STATUS_SUCCESS) {
-		reply = dbus_error_failed(join_pending->msg, "Provisioning failed");
+		reply = dbus_error_failed(join_pending->msg,
+							"Provisioning failed");
 		goto done;
 	}
 
@@ -431,9 +465,10 @@ static void prov_complete_cb(struct bt_mesh *mesh, uint8_t status,
 	l_dbus_message_set_arguments(reply, "t", l_get_u64(dev_key));
 
 done:
+	l_dbus_send(dbus_get_bus(), reply);
+	l_dbus_message_unref(join_pending->msg);
 	l_free(join_pending);
 	join_pending = NULL;
-	l_dbus_send(dbus_get_bus(), reply);
 }
 
 static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
@@ -444,7 +479,7 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 	struct l_dbus_message_iter iter_caps, iter_oob, iter_uuid, iter_comp;
 	struct l_dbus_message *err_reply;
 	uint32_t uri = 0, n;
-	int len;
+	uint32_t len;
 
 	l_debug("Join network request");
 
@@ -469,8 +504,9 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 	/* Read composition data */
 	len = dbus_get_byte_array(&iter_comp, join_pending->composition,
 				L_ARRAY_SIZE(join_pending->composition));
-	if (len <= 0) {
-		err_reply = dbus_error_invalid_args(message, "Bad composition");
+	if (len == 0) {
+		err_reply = dbus_error_invalid_args(message,
+						"Composition is required");
 		goto fail;
 	}
 
@@ -527,6 +563,68 @@ static struct l_dbus_message *cancel_join_call(struct l_dbus *dbus,
 	return reply;
 }
 
+static bool match_attach_request(const void *a, const void *b)
+{
+	const struct attach_data *pending = a;
+	const uint64_t *token = b;
+
+	return *token == pending->token;
+}
+
+static void attach_ready_cb(int status, char *node_path, uint64_t token)
+{
+	struct l_dbus_message *reply;
+	struct attach_data *pending;
+
+	pending = l_queue_find(attach_queue, match_attach_request, &token);
+	if (!pending)
+		return;
+
+	if (status != MESH_ERROR_NONE) {
+		reply = dbus_error_failed(pending->msg, "Attach failed");
+		goto done;
+	}
+
+	reply = l_dbus_message_new_method_return(pending->msg);
+	l_dbus_message_set_arguments(reply, "o", node_path);
+
+done:
+	l_dbus_send(dbus_get_bus(), reply);
+	l_dbus_message_unref(join_pending->msg);
+	l_queue_remove(attach_queue, pending);
+	l_free(pending);
+}
+
+static struct l_dbus_message *attach_call(struct l_dbus *dbus,
+						struct l_dbus_message *message,
+						void *user_data)
+{
+	uint64_t token = 1;
+	const char *app_path, *sender;
+	struct attach_data *pending;
+
+	l_debug("Attach");
+
+	if (!l_dbus_message_get_arguments(message, "ot", &app_path, &token))
+		return dbus_error_invalid_args(message, NULL);
+
+	sender = l_dbus_message_get_sender(message);
+
+	node_attach(app_path, sender, token, attach_ready_cb);
+
+	pending = l_new(struct attach_data, 1);
+
+	pending->token = token;
+	pending->msg = l_dbus_message_ref(message);
+
+	if (!attach_queue)
+		attach_queue = l_queue_new();
+
+	l_queue_push_tail(attach_queue, pending);
+
+	return NULL;
+}
+
 static void setup_network_interface(struct l_dbus_interface *iface)
 {
 	l_dbus_interface_method(iface, "Join", 0, join_network_call, "t",
@@ -536,33 +634,33 @@ static void setup_network_interface(struct l_dbus_interface *iface)
 
 	l_dbus_interface_method(iface, "Cancel", 0, cancel_join_call, "", "");
 
+	l_dbus_interface_method(iface, "Attach", 0, attach_call, "o",
+				"ot", "node", "app", "token");
+
 #if 0 //TODO
 	l_dbus_interface_method(iface, "Leave", 0, leave_network_call, "", "t");
-	l_dbus_interface_method(iface, "Attach", 0, network_attach_call,
-								"oq", "ot");
 #endif
 }
 
 bool mesh_dbus_init(struct l_dbus *dbus)
 {
-	if (!l_dbus_register_interface(dbus, BLUEZ_MESH_NETWORK_INTERFACE,
+	if (!l_dbus_register_interface(dbus, MESH_NETWORK_INTERFACE,
 						setup_network_interface,
 						NULL, false)) {
 		l_info("Unable to register %s interface",
-				BLUEZ_MESH_NETWORK_INTERFACE);
+			       MESH_NETWORK_INTERFACE);
 		return false;
-	} else
-		l_info("registered Network Interface");
+	}
 
 	if (!l_dbus_object_add_interface(dbus, BLUEZ_MESH_PATH,
-						BLUEZ_MESH_NETWORK_INTERFACE,
-						NULL)) {
+						MESH_NETWORK_INTERFACE, NULL)) {
 		l_info("Unable to register the mesh object on '%s'",
-				BLUEZ_MESH_NETWORK_INTERFACE);
-		l_dbus_unregister_interface(dbus, BLUEZ_MESH_NETWORK_INTERFACE);
+							MESH_NETWORK_INTERFACE);
+		l_dbus_unregister_interface(dbus, MESH_NETWORK_INTERFACE);
 		return false;
-	} else
-		l_info("Added Network Interface on %s", BLUEZ_MESH_PATH);
+	}
+
+	l_info("Added Network Interface on %s", BLUEZ_MESH_PATH);
 
 	return true;
 }

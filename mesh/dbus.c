@@ -78,11 +78,28 @@ bool dbus_init(struct l_dbus *bus)
 	if (!mesh_dbus_init(bus))
 		return false;
 
-	/* TODO: Node interface */
+	/* Node interface */
+	if (!node_dbus_init(bus))
+		return false;
 
 	dbus = bus;
 
 	return true;
+}
+
+bool dbus_match_interface(struct l_dbus_message_iter *interfaces,
+							const char *match)
+{
+	const char *interface;
+	struct l_dbus_message_iter properties;
+
+	while (l_dbus_message_iter_next_entry(interfaces, &interface,
+								&properties)) {
+		if (!strcmp(match, interface))
+			return true;
+	}
+
+	return false;
 }
 
 struct l_dbus *dbus_get_bus(void)
@@ -140,4 +157,17 @@ struct l_dbus_message *dbus_error_failed(struct l_dbus_message *msg,
 		return l_dbus_message_new_error(msg,
 					ERROR_INTERFACE ".Failed",
 						"Operation failed");
+}
+
+struct l_dbus_message *dbus_error_not_authorized(struct l_dbus_message *msg,
+						const char *description)
+{
+	if (description)
+		return l_dbus_message_new_error(msg,
+					ERROR_INTERFACE ".NotAuthorized",
+					description);
+	else
+		return l_dbus_message_new_error(msg,
+					ERROR_INTERFACE ".NotAuthorized",
+						"Permission denied");
 }

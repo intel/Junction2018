@@ -22,6 +22,7 @@
 #include <config.h>
 #endif
 
+#include <stdio.h>
 #include <sys/time.h>
 #include <ell/ell.h>
 
@@ -34,8 +35,17 @@
 #include "mesh/storage.h"
 #include "mesh/appkey.h"
 #include "mesh/model.h"
+#include "mesh/util.h"
+#include "mesh/dbus.h"
+#include "mesh/error.h"
 
 #define MIN_COMP_SIZE 14
+
+#define MESH_NODE_INTERFACE "org.bluez.mesh.Node"
+#define MESH_ACCESS_INTERFACE "org.bluez.mesh.Access"
+
+#define MESH_NODE_PATH_PREFIX "/node"
+#define MESH_ELEMENT_PATH_PREFIX "/ele"
 
 struct node_element {
 	struct l_queue *models;
@@ -55,6 +65,9 @@ struct mesh_node {
 	struct l_queue *net_keys;
 	struct l_queue *app_keys;
 	struct l_queue *elements;
+	char *app_path;
+	char *owner;
+	char *path;
 	time_t upd_sec;
 	uint32_t seq_number;
 	uint32_t seq_min_cache;
@@ -94,6 +107,14 @@ static bool match_device_uuid(const void *a, const void *b)
 	const uint8_t *uuid = b;
 
 	return (memcmp(node->dev_uuid, uuid, 16) == 0);
+}
+
+static bool match_token(const void *a, const void *b)
+{
+	const struct mesh_node *node = a;
+	const uint64_t *token = b;
+
+	return *token == l_get_u64(node->dev_key);
 }
 
 static bool match_element_idx(const void *a, const void *b)
@@ -167,6 +188,9 @@ static void free_node_resources(void *data)
 	l_queue_destroy(node->app_keys, NULL);
 	l_queue_destroy(node->elements, element_free);
 	l_free(node->comp);
+	l_free(node->app_path);
+	l_free(node->owner);
+	l_free(node->path);
 
 	if (node->net)
 		mesh_net_unref(node->net);
@@ -1023,4 +1047,288 @@ static void attach_io(void *a, void *b)
 void node_attach_io(struct mesh_io *io)
 {
 	l_queue_foreach(nodes, attach_io, io);
+}
+
+struct node_obj_request {
+	node_attach_ready_func_t cb;
+	struct mesh_node *node;
+};
+
+static bool register_node_object(struct mesh_node *node)
+{
+	node->path = l_malloc(strlen(MESH_NODE_PATH_PREFIX) + 5);
+
+	snprintf(node->path, 10, MESH_NODE_PATH_PREFIX "%4.4x", node->id);
+
+	if (!l_dbus_object_add_interface(dbus_get_bus(), node->path,
+					MESH_NODE_INTERFACE, node))
+		return false;
+
+	return true;
+}
+
+static bool get_element_index_from_path(const char *path, uint8_t *ele_idx)
+{
+	const char *name;
+
+	name = basename(path);
+
+	if (strlen(name) != 5)
+		return false;
+
+	if (strncmp(name, "ele", 3))
+		return false;
+
+	return str2hex(name + 3, 2, ele_idx, 1);
+}
+
+static void get_managed_objects_cb(struct l_dbus_message *message,
+								void *user_data)
+{
+	struct l_dbus_message_iter objects, interfaces;
+	struct node_obj_request *req = user_data;
+	struct mesh_node *node = req->node;
+	const char *path;
+	uint64_t token = l_get_u64(node->dev_key);
+	bool has_primary = false;
+
+	if (l_dbus_message_is_error(message)) {
+		l_error("Failed to get app's dbus objects");
+		return;
+	}
+
+	l_dbus_message_get_arguments(message, "a{oa{sa{sv}}}", &objects);
+
+	while (l_dbus_message_iter_next_entry(&objects, &path, &interfaces)) {
+		uint8_t ele_idx;
+		struct node_element *ele;
+
+		if (!get_element_index_from_path(path, &ele_idx))
+			continue;
+
+		ele = l_queue_find(node->elements, match_element_idx,
+							L_UINT_TO_PTR(ele_idx));
+		if (!ele) {
+			l_error("Bad mesh element dbus object %s", path);
+			goto fail;
+		}
+
+		if (!dbus_match_interface(&interfaces, MESH_ACCESS_INTERFACE)) {
+			l_error("Interface %s not found on %s",
+						MESH_ACCESS_INTERFACE, path);
+			goto fail;
+		}
+
+		if (ele_idx == 0)
+			has_primary = true;
+	}
+
+	if (!has_primary) {
+		l_error("Primary element is not found");
+		goto fail;
+	}
+
+	register_node_object(node);
+	if (node->path) {
+		req->cb(MESH_ERROR_NONE, node->path, token);
+		return;
+	}
+fail:
+	req->cb(MESH_ERROR_FAILED, NULL, token);
+
+	l_free(node->app_path);
+	node->app_path = NULL;
+
+	l_free(node->owner);
+	node->owner = NULL;
+}
+
+/* Establish relationship between application and mesh node */
+void node_attach(const char *app_path, const char *sender, uint64_t token,
+						node_attach_ready_func_t cb)
+{
+	struct node_obj_request *req;
+	struct mesh_node *node;
+
+	node = l_queue_find(nodes, match_token, &token);
+	if (!node) {
+		cb(MESH_ERROR_NOT_FOUND, NULL, token);
+		return;
+	}
+
+	/* TODO: decide what to do if previous node->app_path is not NULL */
+	node->app_path = l_malloc(strlen(app_path) + 1);
+	strcpy(node->app_path, app_path);
+
+	node->owner = l_malloc(strlen(sender) + 1);
+	strcpy(node->owner, sender);
+
+	req = l_new(struct node_obj_request, 1);
+	req->node = node;
+	req->cb = cb;
+
+	l_dbus_method_call(dbus_get_bus(), sender, app_path,
+					L_DBUS_INTERFACE_OBJECT_MANAGER,
+					"GetManagedObjects", NULL,
+					get_managed_objects_cb,
+					req, l_free);
+
+}
+
+static struct l_dbus_message *send_call(struct l_dbus *dbus,
+						struct l_dbus_message *message,
+						void *user_data)
+{
+	struct mesh_node *node = user_data;
+	const char *sender;
+	struct l_dbus_message_iter iter_data;
+	uint8_t ele_idx;
+	uint16_t dst, app_idx, src;
+	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
+	uint32_t len;
+	struct l_dbus_message *reply;
+
+	l_debug("Send");
+
+	sender = l_dbus_message_get_sender(message);
+
+	if (strcmp(sender, node->owner))
+		return dbus_error_not_authorized(message, NULL);
+
+	if (!l_dbus_message_get_arguments(message, "yqqay", &ele_idx, &dst,
+							&app_idx, &iter_data))
+		return dbus_error_invalid_args(message, NULL);
+
+	if (ele_idx >= node_get_num_elements(node))
+		return dbus_error_invalid_args(message, "Bad element index");
+
+	src = node_get_primary(node) + ele_idx;
+
+	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
+	if (!len)
+		return dbus_error_invalid_args(message,
+						"Mesh message is empty");
+
+	if (!mesh_model_send(node->net, src, dst, app_idx,
+				mesh_net_get_default_ttl(node->net), data, len))
+		return dbus_error_failed(message, NULL);
+
+	reply = l_dbus_message_new_method_return(message);
+	l_dbus_message_set_arguments(reply, "");
+
+	return reply;
+}
+
+static struct l_dbus_message *publish_call(struct l_dbus *dbus,
+						struct l_dbus_message *message,
+						void *user_data)
+{
+	struct mesh_node *node = user_data;
+	const char *sender;
+	struct l_dbus_message_iter iter_data;
+	uint16_t mod_id, src;
+	uint8_t ele_idx;
+	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
+	uint32_t len;
+	struct l_dbus_message *reply;
+
+	l_debug("Publish");
+
+	sender = l_dbus_message_get_sender(message);
+
+	if (strcmp(sender, node->owner))
+		return dbus_error_not_authorized(message, NULL);
+
+	if (!l_dbus_message_get_arguments(message, "yqay", &ele_idx, &mod_id,
+								&iter_data))
+		return dbus_error_invalid_args(message, NULL);
+
+	if (ele_idx >= node_get_num_elements(node))
+		return dbus_error_invalid_args(message, "Bad element index");
+
+	src = node_get_primary(node) + ele_idx;
+
+	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
+	if (!len)
+		return dbus_error_invalid_args(message,
+						"Mesh message is empty");
+
+	if (!mesh_model_publish(node->net, src, VENDOR_ID_MASK | mod_id,
+				mesh_net_get_default_ttl(node->net), data, len))
+		return dbus_error_failed(message, NULL);
+
+	reply = l_dbus_message_new_method_return(message);
+	l_dbus_message_set_arguments(reply, "");
+
+	return reply;
+}
+
+static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
+						struct l_dbus_message *message,
+						void *user_data)
+{
+	struct mesh_node *node = user_data;
+	const char *sender;
+	struct l_dbus_message_iter iter_data;
+	uint16_t src;
+	uint32_t mod_id;
+	uint8_t ele_idx;
+	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
+	uint32_t len;
+	struct l_dbus_message *reply;
+
+	l_debug("Publish");
+
+	sender = l_dbus_message_get_sender(message);
+
+	if (strcmp(sender, node->owner))
+		return dbus_error_not_authorized(message, NULL);
+
+	if (!l_dbus_message_get_arguments(message, "yuay", &ele_idx, &mod_id,
+								&iter_data))
+		return dbus_error_invalid_args(message, NULL);
+
+	if (ele_idx >= node_get_num_elements(node))
+		return dbus_error_invalid_args(message, "Bad element index");
+
+	src = node_get_primary(node) + ele_idx;
+
+	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
+	if (!len)
+		return dbus_error_invalid_args(message,
+						"Mesh message is empty");
+
+	if (!mesh_model_publish(node->net, src, mod_id,
+				mesh_net_get_default_ttl(node->net), data, len))
+		return dbus_error_failed(message, NULL);
+
+	reply = l_dbus_message_new_method_return(message);
+	l_dbus_message_set_arguments(reply, "");
+
+	return reply;
+}
+
+static void setup_node_interface(struct l_dbus_interface *iface)
+{
+	l_dbus_interface_method(iface, "Send", 0, send_call, "", "yqqay",
+				"element", "destination", "key", "data");
+	l_dbus_interface_method(iface, "Publish", 0, publish_call, "", "yqay",
+						"element", "model", "data");
+	l_dbus_interface_method(iface, "VendorPublish", 0, vendor_publish_call,
+					"", "yuay", "element", "model", "data");
+	//TODO: Properties
+}
+
+bool node_dbus_init(struct l_dbus *bus)
+{
+	if (!l_dbus_register_interface(bus, MESH_NODE_INTERFACE,
+						setup_node_interface,
+						NULL, false)) {
+		l_info("Unable to register %s interface", MESH_NODE_INTERFACE);
+		return false;
+	}
+
+	l_info("registered Node Interface");
+
+	return true;
 }
