@@ -2,7 +2,6 @@ BlueZ D-Bus Mesh API description
 ***********************************
 
 Mesh Network Hierarchy
-rev-4.4
 ======================
 Service		org.bluez.mesh
 Interface	org.bluez.mesh.Network
@@ -85,8 +84,7 @@ Methods:
 			as a result of successful Join() method call.
 
 			In case of success, the method call returns mesh node object (see
-			Mesh Node Hierarchy section), and the unicast address of the primary
-			(first) element.
+			Mesh Node Hierarchy section).
 
 			PossibleErrors:
 				org.bluez.mesh.Error.DoesNotExist,
@@ -207,8 +205,7 @@ Methods:
 				org.bluez.mesh.Error.InvalidArguments
 
 
-
-Properties 		uint16 unicast [read-only] : Unicast address assigned to this element
+Properties 	uint16 unicast [read-only] : Unicast address assigned to this element
 
 			array{uint16 model_id, dict config} sig_models  [read-only] : SIG defined models
 									on this element
@@ -248,7 +245,6 @@ Properties 		uint16 unicast [read-only] : Unicast address assigned to this eleme
 					Model configuration dictionary may be empty
 
 
-
 Mesh Application Hierarchy
 ==========================
 Service		unique name
@@ -256,6 +252,19 @@ Interface	org.bluez.mesh.Access
 Object path	/<app_defined_root>/ele<yy>
 		where yy is a 2-digit zero relative hexadecimal number of the element
 
+An example mesh application hierarchy may look like this:
+
+		-> /com/example
+			|   - org.freedesktop.DBus.ObjectManager
+			|   - org.bluez.mesh.Attention (optional)
+			|
+			-> /com/example/ele00
+			| |   - org.bluez.mesh.Access
+			-> /com/example/ele01
+			| |   - org.bluez.mesh.Access
+			...
+			-> /com/example/elexx
+			| |   - org.bluez.mesh.Access
 Methods:
 
 		void MessageReceived(uint16 dest, uint16 source, uint16 key_index,
