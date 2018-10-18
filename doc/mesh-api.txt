@@ -66,18 +66,20 @@ Methods:
 			Cancels an outstanding Join method. Join will return with
 			org.bluez.mesh.Error.Canceled
 
-		(object, unicast) Attach(object application, uint64 token)
+		object Attach(object app_defined_root, uint64 token)
 
-			This is the first method that an application must call to obtain
-			access to mesh node functionalities. The meshd daemon verifies
-			whether the application is authorized to use this mesh node based
-			on the value of the 64-bit token, which has been assigned to the
-			application when it first joined mesh network.
+			After successful Provisioning/Joining, this is the first method that
+			an application must call to obtain access to mesh node functionalities.
+			The meshd daemon verifies whether the application is authorized to
+			use this mesh node based on the value of the 64-bit token, which has
+			been assigned to the application when it first joined mesh network.
 
-			The application parameter is an object path to the application that
-			implements org.bluez.mesh.Access interface (see Mesh Application
-			hierarchy section) and may also implement org.bluez.mesh.Attention
-			interface.
+			The app_defined_root parameter is a D-Bus object root path of the
+			node where child mesh elements have their own objects that implement
+			the org.bluez.mesh.Access interface. The standard DBus.ObjectManager
+			interface must be available on the app_defined_root path. The
+			app_defined_root tree must conform to the naming convention described
+			in the Mesh Application Hierarchy.
 
 			The token parameter is a 64-bit number that has been obtained
 			as a result of successful Join() method call.
@@ -251,7 +253,8 @@ Mesh Application Hierarchy
 ==========================
 Service		unique name
 Interface	org.bluez.mesh.Access
-Object path	freely definable
+Object path	/<app_defined_root>/ele<yy>
+		where yy is a 2-digit zero relative hexadecimal number of the element
 
 Methods:
 
