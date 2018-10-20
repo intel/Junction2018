@@ -274,7 +274,7 @@ static bool pub_frnd_cred(struct mesh_net *net, uint16_t src, uint32_t mod_id)
 	return (mod->pub->credential != 0);
 }
 
-static unsigned int msg_send(struct mesh_net *net, uint32_t mod_id,
+static unsigned int msg_send(struct mesh_net *net, bool credential,
 				uint16_t src, uint32_t dst,
 				uint8_t key_id, const uint8_t *key,
 				uint8_t *aad, uint8_t ttl,
@@ -309,7 +309,7 @@ static unsigned int msg_send(struct mesh_net *net, uint32_t mod_id,
 
 	/* print_packet("Encrypted with", key, 16); */
 
-	ret = mesh_net_app_send(net, pub_frnd_cred(net, src, mod_id),
+	ret = mesh_net_app_send(net, credential,
 				src, dst, key_id, ttl,
 				seq_num, iv_index,
 				szmic,
@@ -626,12 +626,12 @@ done:
 	return forward.done;
 }
 
-unsigned int mesh_model_send(struct mesh_net *net, uint32_t mod_id,
-				uint16_t src, uint32_t target,
-				uint16_t app_idx, uint8_t ttl,
+unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
+				uint16_t src, uint8_t ttl,
 				const void *msg, uint16_t msg_len)
 {
 	struct mesh_model *mod;
+	uint32_t target;
 	uint8_t *aad = NULL;
 	uint16_t dst;
 	uint8_t key_id;
@@ -654,10 +654,7 @@ unsigned int mesh_model_send(struct mesh_net *net, uint32_t mod_id,
 
 	gettimeofday(&tx_start, NULL);
 
-	if (target == USE_PUB_VALUE) {
-		target = mod->pub->addr;
-		app_idx = mod->pub->idx;
-	}
+	target = mod->pub->addr;
 
 	if (IS_UNASSIGNED(target))
 		return 0;
@@ -672,11 +669,49 @@ unsigned int mesh_model_send(struct mesh_net *net, uint32_t mod_id,
 
 		aad = virt->addr;
 		dst = virt->ota;
-	} else
+	} else {
 		dst = target;
+	}
 
-	l_debug("dst=%x", dst);
-	if (app_idx == APP_IDX_DEV && mesh_net_provisioner_mode_get(net)) {
+	l_debug("publish dst=%x", dst);
+
+	key = appkey_get_key(net, mod->pub->idx, &key_id);
+	if (!key) {
+		l_debug("no app key for (%x)", mod->pub->idx);
+		return 0;
+	}
+
+	l_debug("(%x) %p", mod->pub->idx, key);
+	l_debug("key_id %x", key_id);
+
+	return msg_send(net, pub_frnd_cred(net, src, mod_id), src,
+				dst, key_id, key, aad, ttl, msg, msg_len);
+
+}
+
+unsigned int mesh_model_send(struct mesh_net *net,
+				uint16_t src, uint16_t target,
+				uint16_t app_idx, uint8_t ttl,
+				const void *msg, uint16_t msg_len)
+{
+	uint8_t key_id;
+	const uint8_t *key;
+
+	/* print_packet("Mod Tx", msg, msg_len); */
+
+	if (!net || msg_len > 380)
+		return 0;
+
+	/* If SRC is 0, use the Primary Element */
+	if (src == 0)
+		src = mesh_net_get_address(net);
+
+	gettimeofday(&tx_start, NULL);
+
+	if (IS_UNASSIGNED(target))
+		return 0;
+
+	if (app_idx == APP_IDX_DEV) {
 		key = node_get_device_key(mesh_net_local_node_get(net));
 	} else if (app_idx == APP_IDX_DEV) {
 		key = node_get_device_key(mesh_net_local_node_get(net));
@@ -696,7 +731,7 @@ unsigned int mesh_model_send(struct mesh_net *net, uint32_t mod_id,
 		l_debug("key_id %x", key_id);
 	}
 
-	return msg_send(net, mod_id, src, dst, key_id, key, aad, ttl,
+	return msg_send(net, false, src, target, key_id, key, NULL, ttl,
 			msg, msg_len);
 
 }
