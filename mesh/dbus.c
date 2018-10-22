@@ -102,6 +102,25 @@ bool dbus_match_interface(struct l_dbus_message_iter *interfaces,
 	return false;
 }
 
+bool dbus_append_byte_array(struct l_dbus_message_builder *builder,
+						const uint8_t *data, int len)
+{
+	int i;
+
+	if (!l_dbus_message_builder_enter_array(builder, "y"))
+		return false;
+
+	for (i = 0; i < len; i++)
+		if (!l_dbus_message_builder_append_basic(builder, 'y',
+				data + i))
+			return false;
+
+	if (!l_dbus_message_builder_leave_array(builder))
+		return false;
+
+	return true;
+}
+
 struct l_dbus *dbus_get_bus(void)
 {
 	return dbus;
@@ -170,4 +189,17 @@ struct l_dbus_message *dbus_error_not_authorized(struct l_dbus_message *msg,
 		return l_dbus_message_new_error(msg,
 					ERROR_INTERFACE ".NotAuthorized",
 						"Permission denied");
+}
+
+struct l_dbus_message *dbus_error_not_found(struct l_dbus_message *msg,
+						const char *description)
+{
+	if (description)
+		return l_dbus_message_new_error(msg,
+					ERROR_INTERFACE ".NotFound",
+					description);
+	else
+		return l_dbus_message_new_error(msg,
+					ERROR_INTERFACE ".NotFound",
+						"Does not exist");
 }
