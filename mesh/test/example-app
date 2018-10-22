@@ -21,7 +21,7 @@ DBUS_OM_IFACE =      'org.freedesktop.DBus.ObjectManager'
 
 MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
 MESH_NODE_IFACE = 'org.bluez.mesh.Node'
-MESH_ACCESS_IFACE = 'org.bluez.mesh.Access'
+MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element'
 
 token = numpy.uint64(0x76bd4f2372476578)
 
@@ -71,21 +71,21 @@ class Element(dbus.service.Object):
 
     def get_properties(self):
         return {
-                MESH_ACCESS_IFACE: {
+                MESH_ELEMENT_IFACE: {
                 }
         }
 
     def add_model(self, model):
         self.models.append(model)
 
-    @dbus.service.method(MESH_ACCESS_IFACE,
+    @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="qqqay", out_signature="")
     def MessageReceived(self, dest, source, key, data):
         print('Default Message Received ')
         for model in self.models:
             model.process_message(source, key, data)
 
-    @dbus.service.method(MESH_ACCESS_IFACE,
+    @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="", out_signature="")
     def Test(self):
       print('Test')

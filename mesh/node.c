@@ -42,7 +42,7 @@
 #define MIN_COMP_SIZE 14
 
 #define MESH_NODE_INTERFACE "org.bluez.mesh.Node"
-#define MESH_ACCESS_INTERFACE "org.bluez.mesh.Access"
+#define MESH_ELEMENT_INTERFACE "org.bluez.mesh.Element"
 
 #define MESH_NODE_PATH_PREFIX "/node"
 #define MESH_ELEMENT_PATH_PREFIX "/ele"
@@ -1135,9 +1135,9 @@ static void get_managed_objects_cb(struct l_dbus_message *message,
 			goto fail;
 		}
 
-		if (!dbus_match_interface(&interfaces, MESH_ACCESS_INTERFACE)) {
+		if (!dbus_match_interface(&interfaces, MESH_ELEMENT_INTERFACE)) {
 			l_error("Interface %s not found on %s",
-						MESH_ACCESS_INTERFACE, path);
+						MESH_ELEMENT_INTERFACE, path);
 			goto fail;
 		}
 
@@ -1379,7 +1379,7 @@ void node_forward_message(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
 		return;
 
 	message = l_dbus_message_new_method_call(dbus, node->owner, ele->path,
-			MESH_ACCESS_INTERFACE, "MessageReceived");
+			MESH_ELEMENT_INTERFACE, "MessageReceived");
 
 	builder = l_dbus_message_builder_new(message);
 
