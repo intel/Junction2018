@@ -67,6 +67,7 @@ struct mod_forward {
 	uint8_t ttl;
 	int8_t rssi;
 	bool szmict;
+	bool has_dst;
 	bool done;
 };
 
@@ -92,6 +93,17 @@ static void unref_virt(void *data)
 static bool simple_match(const void *a, const void *b)
 {
 	return a == b;
+}
+
+static bool has_binding(struct l_queue *bindings, uint16_t idx)
+{
+	const struct l_queue_entry *l;
+
+	for (l = l_queue_get_entries(bindings); l; l = l->next) {
+		if (L_PTR_TO_UINT(l->data) == idx)
+			return true;
+	}
+	return false;
 }
 
 static bool find_virt_by_id(const void *a, const void *b)
@@ -135,20 +147,15 @@ static void forward_model(void *a, void *b)
 	struct mod_forward *fwd = b;
 	struct mesh_virtual *virt;
 	uint32_t dst;
-	bool has_dst = false;
-
-	if (!mod->cbs || !mod->cbs->recv)
-		return;
+	bool result;
 
 	l_debug("model %8.8x with idx %3.3x", mod->id, fwd->idx);
-	if (fwd->idx != APP_IDX_DEV &&
-		!l_queue_find(mod->bindings, simple_match,
-						L_UINT_TO_PTR(fwd->idx)))
+	if (fwd->idx != APP_IDX_DEV && !has_binding(mod->bindings, fwd->idx))
 		return;
 
 	dst = fwd->dst;
 	if (dst == fwd->unicast || IS_ALL_NODES(dst))
-		has_dst = true;
+		fwd->has_dst = true;
 	else if (fwd->virt) {
 		virt = l_queue_find(mod->virtuals, simple_match, fwd->virt);
 		if (virt) {
@@ -158,17 +165,17 @@ static void forward_model(void *a, void *b)
 			 * (multiple Virtual Addresses that map to the same
 			 * u16 OTA addr)
 			 */
-			has_dst = true;
+			fwd->has_dst = true;
 			dst = virt->id;
 		}
 	} else {
 		if (l_queue_find(mod->subs, simple_match, L_UINT_TO_PTR(dst)))
-			has_dst = true;
+			fwd->has_dst = true;
 	}
 
-
-	if (!has_dst)
+	if (!fwd->has_dst)
 		return;
+
 
 	/*
 	 * TODO: models shall be registered with a list of supported opcodes and
@@ -177,11 +184,16 @@ static void forward_model(void *a, void *b)
 	 * If this is an internal registered model, check for a "bind" callback.
 	 * For an external ("user") model, send D-Bus method (signal?) (TBD)
 	 */
+	if (!mod->cbs)
+		return;
+
+	result = false;
+
 	if (mod->cbs->recv)
-		mod->cbs->recv(fwd->src, dst, fwd->unicast, fwd->idx,
+		result = mod->cbs->recv(fwd->src, dst, fwd->unicast, fwd->idx,
 				fwd->data, fwd->size, fwd->ttl, mod->user_data);
 
-	if (dst == fwd->unicast)
+	if (dst == fwd->unicast && result)
 		fwd->done = true;
 }
 
@@ -335,7 +347,7 @@ static void model_unbind_idx(void *a, void *b)
 
 	l_queue_remove(mod->bindings, b);
 
-	if (mod->cbs->bind)
+	if (mod->cbs && mod->cbs->bind)
 		mod->cbs->bind(idx, ACTION_DELETE);
 }
 
@@ -347,9 +359,10 @@ static int model_bind_idx(struct mesh_model *mod, uint16_t idx)
 	if (!l_queue_push_tail(mod->bindings, L_UINT_TO_PTR(idx)))
 		return MESH_STATUS_INSUFF_RESOURCES;
 
-	if (mod->cbs->bind)
+	if (mod->cbs && mod->cbs->bind)
 		mod->cbs->bind(idx, ACTION_ADD);
 
+	l_debug("Add %4.4x to model %8.8x", idx, mod->id);
 	return MESH_STATUS_SUCCESS;
 
 }
@@ -360,6 +373,7 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 	int fail;
 	struct mesh_model *mod;
 	int status;
+	bool is_present;
 
 	mod = find_model(net, addr, id, &fail);
 	if (!mod) {
@@ -370,11 +384,16 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 	if (id == CONFIG_SRV_MODEL || id == CONFIG_CLI_MODEL)
 		return MESH_STATUS_INVALID_MODEL;
 
-	if (!l_queue_find(mod->bindings, simple_match, L_UINT_TO_PTR(app_idx)))
-		return MESH_STATUS_CANNOT_BIND;
-
 	if (!appkey_have_key(net, app_idx))
 		return MESH_STATUS_INVALID_APPKEY;
+
+	is_present = has_binding(mod->bindings, app_idx);
+
+	if (!is_present && unbind)
+		return MESH_STATUS_SUCCESS;
+
+	if (is_present && !unbind)
+		return MESH_STATUS_SUCCESS;
 
 	if (unbind) {
 		model_unbind_idx(mod, &app_idx);
@@ -531,7 +550,6 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 		.size = size - (szmict ? 8 : 4),
 		.ttl = ttl,
 		.virt = NULL,
-		.done = false,
 	};
 
 	struct mesh_node *node;
@@ -539,6 +557,7 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 	int decrypt_idx, i, ele_idx;
 	uint16_t addr;
 	struct mesh_virtual *decrypt_virt = NULL;
+	bool result = false;
 
 	l_debug("iv_index %8.8x key_id = %2.2x", iv_index, key_id);
 	if (!dst)
@@ -553,7 +572,6 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 	if (dst < 0x8000 && ele_idx < 0)
 		/* Unicast and not addressed to us */
 		return false;
-
 
 	clear_text = l_malloc(size);
 	if (!clear_text)
@@ -582,7 +600,7 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 
 	if (decrypt_idx < 0) {
 		l_error("model.c - Failed to decrypt application payload");
-		forward.done = false;
+		result = false;
 		goto done;
 	}
 
@@ -593,7 +611,7 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 
 		if (appkey_msg_in_replay_cache(net, (uint16_t) decrypt_idx, src,
 							crpl, seq, iv_index)) {
-			forward.done = true;
+			result = true;
 			goto done;
 		}
 	}
@@ -615,15 +633,30 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 			continue;
 
 		forward.unicast = addr + i;
+		forward.has_dst = false;
+
 		models = node_get_element_models(node, i, NULL);
 		l_queue_foreach(models, forward_model, &forward);
 
+		/* The message has not been handled by internal models */
+		if (forward.has_dst && !forward.done) {
+			/* TODO: add calls to external app */
+		}
+
+		/*
+		 * Either the message has been processed internally or
+		 * has been passed on to an external model.
+		 */
+		result = forward.has_dst | forward.done;
+
+		/* If the message was to unicast address, we are done */
 		if (dst < 0x8000 && ele_idx == i)
 			break;
 	}
+
 done:
 	l_free(clear_text);
-	return forward.done;
+	return result;
 }
 
 unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
@@ -829,6 +862,7 @@ struct mesh_model *mesh_model_new(uint8_t ele_idx, uint32_t id, bool vendor)
 	return mod;
 }
 
+/* Internal models only */
 static void restore_model_state(void *data)
 {
 	struct mesh_model *mod = data;
@@ -836,6 +870,8 @@ static void restore_model_state(void *data)
 	const struct l_queue_entry *b;
 
 	cbs = mod->cbs;
+	if (!cbs)
+		return;
 
 	if (l_queue_isempty(mod->bindings) || !mod->cbs->bind) {
 		for (b = l_queue_get_entries(mod->bindings); b; b = b->next) {
@@ -849,13 +885,17 @@ static void restore_model_state(void *data)
 		cbs->pub(mod->pub);
 }
 
-bool mesh_model_vendor_register(struct mesh_net *net, uint8_t ele_idx,
+/* This registers an internal model, i.e. implemented within meshd */
+bool mesh_model_register(struct mesh_net *net, uint8_t ele_idx,
 					uint32_t mod_id,
 					const struct mesh_model_ops *cbs,
 					void *user_data)
 {
 	struct mesh_model *mod;
 	struct mesh_node *node;
+
+	/* Internal models are always SIG models */
+	mod_id = VENDOR_ID_MASK | mod_id;
 
 	node = mesh_net_local_node_get(net);
 	if (!node)
@@ -871,16 +911,6 @@ bool mesh_model_vendor_register(struct mesh_net *net, uint8_t ele_idx,
 	l_idle_oneshot(restore_model_state, mod, NULL);
 
 	return true;
-}
-
-bool mesh_model_register(struct mesh_net *net, uint8_t ele_idx,
-					uint32_t mod_id,
-					const struct mesh_model_ops *cbs,
-					void *user_data)
-{
-	uint32_t id = VENDOR_ID_MASK | mod_id;
-
-	return mesh_model_vendor_register(net, ele_idx, id, cbs, user_data);
 }
 
 void mesh_model_app_key_delete(struct mesh_net *net, struct l_queue *models,
@@ -1129,6 +1159,7 @@ struct mesh_model *mesh_model_init(struct mesh_net *net, uint8_t ele_idx,
 	struct mesh_model *mod;
 	uint32_t i;
 
+	l_debug("mod id %4.4x", db_mod->id);
 	mod = mesh_model_new(ele_idx, db_mod->id, db_mod->vendor);
 	if (!mod)
 		return NULL;
@@ -1151,14 +1182,10 @@ struct mesh_model *mesh_model_init(struct mesh_net *net, uint8_t ele_idx,
 	/* Add application key bindings if present */
 	if (db_mod->bindings) {
 		mod->bindings = l_queue_new();
-
-		if (!mod->bindings) {
-			mesh_model_free(mod);
-			return NULL;
-		}
-
 		for (i = 0; i < db_mod->num_bindings; i++) {
-			if (!model_bind_idx(mod, db_mod->bindings[i])) {
+			l_debug("num_bindings %d", db_mod->num_bindings);
+			if (model_bind_idx(mod, db_mod->bindings[i]) !=
+						MESH_STATUS_SUCCESS) {
 				mesh_model_free(mod);
 				return NULL;
 			}
