@@ -289,7 +289,6 @@ static void attach_exit(void *data)
 
 	reply = dbus_error_failed(pending->msg, "Failed. Exiting");
 	l_dbus_send(dbus_get_bus(), reply);
-	l_dbus_message_unref(pending->msg);
 	l_free(pending);
 }
 
@@ -303,14 +302,14 @@ void mesh_cleanup(void)
 	if (join_pending) {
 		reply = dbus_error_failed(join_pending->msg, "Failed. Exiting");
 		l_dbus_send(dbus_get_bus(), reply);
-		l_dbus_message_unref(join_pending->msg);
 		l_free(join_pending);
 	}
 
 	l_queue_destroy(attach_queue, attach_exit);
-
 	node_cleanup_all();
 	l_queue_destroy(controllers, NULL);
+	l_dbus_object_remove_interface(dbus_get_bus(), BLUEZ_MESH_PATH,
+							MESH_NETWORK_INTERFACE);
 	l_dbus_unregister_interface(dbus_get_bus(), MESH_NETWORK_INTERFACE);
 }
 
@@ -466,7 +465,6 @@ static void prov_complete_cb(struct bt_mesh *mesh, uint8_t status,
 
 done:
 	l_dbus_send(dbus_get_bus(), reply);
-	l_dbus_message_unref(join_pending->msg);
 	l_free(join_pending);
 	join_pending = NULL;
 }
@@ -590,7 +588,6 @@ static void attach_ready_cb(int status, char *node_path, uint64_t token)
 
 done:
 	l_dbus_send(dbus_get_bus(), reply);
-	l_dbus_message_unref(join_pending->msg);
 	l_queue_remove(attach_queue, pending);
 	l_free(pending);
 }
@@ -610,7 +607,8 @@ static struct l_dbus_message *attach_call(struct l_dbus *dbus,
 
 	sender = l_dbus_message_get_sender(message);
 
-	node_attach(app_path, sender, token, attach_ready_cb);
+	if (node_attach(app_path, sender, token, attach_ready_cb) != MESH_ERROR_NONE)
+		return dbus_error_not_found(message, "Matching node not found");
 
 	pending = l_new(struct attach_data, 1);
 

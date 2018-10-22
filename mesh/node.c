@@ -48,6 +48,7 @@
 #define MESH_ELEMENT_PATH_PREFIX "/ele"
 
 struct node_element {
+	char *path;
 	struct l_queue *models;
 	uint16_t location;
 	uint8_t idx;
@@ -172,11 +173,20 @@ struct mesh_node *node_new(void)
 	return node;
 }
 
+static void free_element_path(void *a, void *b)
+{
+	struct node_element *element = a;
+
+	l_free(element->path);
+	element->path = NULL;
+}
+
 static void element_free(void *data)
 {
 	struct node_element *element = data;
 
 	l_queue_destroy(element->models, mesh_model_free);
+	l_free(element->path);
 	l_free(element);
 }
 
@@ -190,10 +200,14 @@ static void free_node_resources(void *data)
 	l_free(node->comp);
 	l_free(node->app_path);
 	l_free(node->owner);
-	l_free(node->path);
 
 	if (node->net)
 		mesh_net_unref(node->net);
+
+	if (node->path)
+		l_dbus_object_remove_interface(dbus_get_bus(), node->path,
+					MESH_NODE_INTERFACE);
+	l_free(node->path);
 
 	l_free(node);
 }
@@ -338,6 +352,7 @@ void node_cleanup(void *data)
 void node_cleanup_all(void)
 {
 	l_queue_destroy(nodes, node_cleanup);
+	l_dbus_unregister_interface(dbus_get_bus(), MESH_NODE_INTERFACE);
 }
 
 bool node_is_provisioned(struct mesh_node *node)
@@ -887,8 +902,6 @@ bool node_parse_composition(struct mesh_node *node, uint8_t *data,
 	if (!len)
 		return false;
 
-	l_debug("len %d", len);
-
 	/* For remote nodes, skip page -- We only support Page Zero */
 	if (!local) {
 		data++;
@@ -1092,22 +1105,31 @@ static void get_managed_objects_cb(struct l_dbus_message *message,
 	uint64_t token = l_get_u64(node->dev_key);
 	bool has_primary = false;
 
+	l_debug("get_managed_objects_cb");
+
 	if (l_dbus_message_is_error(message)) {
 		l_error("Failed to get app's dbus objects");
-		return;
+		goto fail;
 	}
 
-	l_dbus_message_get_arguments(message, "a{oa{sa{sv}}}", &objects);
+	if (!l_dbus_message_get_arguments(message, "a{oa{sa{sv}}}", &objects)) {
+		l_error("Failed to parse app's dbus objects");
+		goto fail;
+	}
 
 	while (l_dbus_message_iter_next_entry(&objects, &path, &interfaces)) {
 		uint8_t ele_idx;
 		struct node_element *ele;
 
+		l_debug("path %s", path);
 		if (!get_element_index_from_path(path, &ele_idx))
 			continue;
 
 		ele = l_queue_find(node->elements, match_element_idx,
 							L_UINT_TO_PTR(ele_idx));
+		ele->path = l_malloc(strlen(path) + 1);
+		strcpy(ele->path, path);
+
 		if (!ele) {
 			l_error("Bad mesh element dbus object %s", path);
 			goto fail;
@@ -1136,6 +1158,7 @@ static void get_managed_objects_cb(struct l_dbus_message *message,
 fail:
 	req->cb(MESH_ERROR_FAILED, NULL, token);
 
+	l_queue_foreach(node->elements, free_element_path, NULL);
 	l_free(node->app_path);
 	node->app_path = NULL;
 
@@ -1144,17 +1167,17 @@ fail:
 }
 
 /* Establish relationship between application and mesh node */
-void node_attach(const char *app_path, const char *sender, uint64_t token,
+int node_attach(const char *app_path, const char *sender, uint64_t token,
 						node_attach_ready_func_t cb)
 {
 	struct node_obj_request *req;
 	struct mesh_node *node;
 
+	l_debug("Node attach");
+
 	node = l_queue_find(nodes, match_token, &token);
-	if (!node) {
-		cb(MESH_ERROR_NOT_FOUND, NULL, token);
-		return;
-	}
+	if (!node)
+		return MESH_ERROR_NOT_FOUND;
 
 	/* TODO: decide what to do if previous node->app_path is not NULL */
 	node->app_path = l_malloc(strlen(app_path) + 1);
@@ -1167,11 +1190,13 @@ void node_attach(const char *app_path, const char *sender, uint64_t token,
 	req->node = node;
 	req->cb = cb;
 
+	l_info("Call managed objects");
 	l_dbus_method_call(dbus_get_bus(), sender, app_path,
 					L_DBUS_INTERFACE_OBJECT_MANAGER,
 					"GetManagedObjects", NULL,
 					get_managed_objects_cb,
 					req, l_free);
+	return MESH_ERROR_NONE;
 
 }
 
@@ -1316,7 +1341,8 @@ static void setup_node_interface(struct l_dbus_interface *iface)
 						"element", "model", "data");
 	l_dbus_interface_method(iface, "VendorPublish", 0, vendor_publish_call,
 					"", "yuay", "element", "model", "data");
-	//TODO: Properties
+
+	/*TODO: Properties */
 }
 
 bool node_dbus_init(struct l_dbus *bus)
@@ -1331,4 +1357,52 @@ bool node_dbus_init(struct l_dbus *bus)
 	l_info("registered Node Interface");
 
 	return true;
+}
+
+void node_forward_message(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
+					uint16_t src, uint16_t key_idx,
+					uint16_t size, const uint8_t *data)
+{
+	struct node_element *ele;
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	struct l_dbus_message_builder *builder;
+
+	l_debug("Send \"MessageReceived\"");
+
+	ele = l_queue_find(node->elements, match_element_idx,
+							L_UINT_TO_PTR(ele_idx));
+	if (!ele || !ele->path || !node->owner)
+		return;
+
+	message = l_dbus_message_new_method_call(dbus, node->owner, ele->path,
+			MESH_ACCESS_INTERFACE, "MessageReceived");
+
+	builder = l_dbus_message_builder_new(message);
+
+	if (!l_dbus_message_builder_append_basic(builder, 'q', &dst))
+		goto error;
+
+	if (!l_dbus_message_builder_append_basic(builder, 'q', &src))
+		goto error;
+
+	if (!l_dbus_message_builder_append_basic(builder, 'q', &key_idx))
+		goto error;
+
+	if (!dbus_append_byte_array(builder, data, size))
+		goto error;
+
+	if (!l_dbus_message_builder_finalize(builder))
+		goto error;
+
+	l_dbus_send(dbus, message);
+
+error:
+	l_dbus_message_builder_destroy(builder);
+}
+
+void node_forward_virt_message(struct mesh_node *node, uint8_t ele_idx,
+			uint8_t virt[16], uint16_t src, uint16_t key_idx,
+			uint16_t size, const uint8_t *data)
+{
 }

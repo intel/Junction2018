@@ -83,8 +83,14 @@ uint8_t node_beacon_mode_get(struct mesh_node *node);
 bool node_friend_mode_set(struct mesh_node *node, bool enable);
 uint8_t node_friend_mode_get(struct mesh_node *node);
 uint32_t node_seq_cache(struct mesh_node *node);
+void node_forward_message(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
+				uint16_t src, uint16_t key_idx, uint16_t size,
+				const uint8_t *data);
+void node_forward_virt_message(struct mesh_node *node, uint8_t ele_idx,
+			uint8_t virt[16], uint16_t src, uint16_t key_idx,
+			uint16_t size, const uint8_t *data);
 void node_attach_io(struct mesh_io *io);
-void node_attach(const char *app_path, const char *sender, uint64_t token,
+int node_attach(const char *app_path, const char *sender, uint64_t token,
 						node_attach_ready_func_t cb);
 void node_id_set(struct mesh_node *node, uint16_t node_id);
 bool node_dbus_init(struct l_dbus *bus);

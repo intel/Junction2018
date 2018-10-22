@@ -640,7 +640,15 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 
 		/* The message has not been handled by internal models */
 		if (forward.has_dst && !forward.done) {
-			/* TODO: add calls to external app */
+			if (!forward.virt)
+				node_forward_message(node, i, dst, src,
+					forward.idx, forward.size,
+					forward.data);
+			else
+				node_forward_virt_message(node, i,
+						forward.virt->addr, src,
+						forward.idx, forward.size,
+						forward.data);
 		}
 
 		/*
