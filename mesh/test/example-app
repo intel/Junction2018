@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
-import dbus
 import sys
+import numpy
+import dbus
+import dbus.service
+import dbus.exceptions
 
 try:
   from gi.repository import GObject
@@ -14,21 +17,17 @@ mainloop = None
 
 MESH_SERVICE_NAME = 'org.bluez.mesh'
 DBUS_PROP_IFACE =    'org.freedesktop.DBus.Properties'
+DBUS_OM_IFACE =      'org.freedesktop.DBus.ObjectManager'
 
 MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
+MESH_NODE_IFACE = 'org.bluez.mesh.Node'
+MESH_ACCESS_IFACE = 'org.bluez.mesh.Access'
 
-token = 0
-uuid = bytearray.fromhex("aabbccddeeff00112233445566778899")
-agent = "/test/agent"
-caps = ["OutNumeric"]
-oob_info = [""]
-uri_hash = 0
-composition = bytearray.fromhex("0200100001000a000d000100020000000110")
+token = numpy.uint64(0x76bd4f2372476578)
 
 def generic_error_cb(error):
     print('D-Bus call failed: ' + str(error))
     mainloop.quit()
-
 
 def interfaces_removed_cb(object_path, interfaces):
     if not mesh_net:
@@ -38,6 +37,98 @@ def interfaces_removed_cb(object_path, interfaces):
         print('Service was removed')
         mainloop.quit()
 
+class Application(dbus.service.Object):
+
+    def __init__(self, bus):
+        self.path = '/example'
+        self.elements = []
+        dbus.service.Object.__init__(self, bus, self.path)
+        self.add_element(FirstElement(bus, 0))
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_element(self, element):
+        self.elements.append(element)
+
+    @dbus.service.method(DBUS_OM_IFACE, out_signature='a{oa{sa{sv}}}')
+    def GetManagedObjects(self):
+        response = {}
+        print('GetManagedObjects')
+        for element in self.elements:
+            response[element.get_path()] = element.get_properties()
+        return response
+
+class Element(dbus.service.Object):
+    PATH_BASE = '/example/ele'
+
+    def __init__(self, bus, index):
+        self.path = self.PATH_BASE + format(index, '02x')
+        print(self.path)
+        self.models = []
+        self.bus = bus
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+                MESH_ACCESS_IFACE: {
+                }
+        }
+
+    def add_model(self, model):
+        self.models.append(model)
+
+    @dbus.service.method(MESH_ACCESS_IFACE,
+                                        in_signature="qqqay", out_signature="")
+    def MessageReceived(self, dest, source, key, data):
+        print('Default Message Received ')
+        for model in self.models:
+            model.process_message(source, key, data)
+
+    @dbus.service.method(MESH_ACCESS_IFACE,
+                                        in_signature="", out_signature="")
+    def Test(self):
+      print('Test')
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+class Model():
+    def __init__(self, id):
+        self.cmd_ops = []
+        self.id = id
+
+    def process_message(self, source, key, data):
+        print('Model process message')
+
+class OnOffServer(Model):
+    def __init__(self, id):
+        Model.__init__(self, 0x1000)
+        self.cmd_ops = { 0x8201, # get
+                         0x8202, # set
+                         0x8203 } # set unacknowledged
+        print('OnOff Server')
+
+class FirstElement(Element):
+    def __init__(self, bus, index):
+        Element.__init__(self, bus, 0x00)
+        self.add_model(OnOffServer(0x1000))
+
+    def Test(self):
+      print('Test FirstElement')
+
+    def MessageReceived(self, dest, source, key, data):
+        print('Message received on Element 0')
+        for model in self.models:
+            model.process_message(source, key, data)
+
+def attach_app_cb(node):
+    print('Mesh application registered ', node)
+
+
+def attach_app_error_cb(error):
+    print('Failed to register application: ' + str(error))
+    mainloop.quit()
 
 def main():
 
@@ -46,17 +137,21 @@ def main():
     global bus
     bus = dbus.SystemBus()
     global mainloop
-    mainloop = GObject.MainLoop()
 
-    mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME, "/org/bluez/mesh"), MESH_NETWORK_IFACE)
+    mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME,
+                                             "/org/bluez/mesh"),
+                                             MESH_NETWORK_IFACE)
     mesh_net.connect_to_signal('InterfacesRemoved', interfaces_removed_cb)
 
-    mesh_net.Join(agent, caps, uuid, oob_info, uri_hash, composition)
-    mesh_net.Cancel(agent, caps, uuid, oob_info, uri_hash, composition)
+    app = Application(bus)
 
+    mainloop = GObject.MainLoop()
+
+    print('Attach')
+    mesh_net.Attach(app.get_path(), token,
+                    reply_handler=attach_app_cb,
+                    error_handler=attach_app_error_cb)
     mainloop.run()
-
 
 if __name__ == '__main__':
     main()
-
