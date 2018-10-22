@@ -78,7 +78,7 @@ static void request_name_callback(struct l_dbus *dbus, bool success,
 		success ? "success": "failed");
 
 	if (success)
-		mesh_dbus_init(dbus);
+		dbus_init(dbus);
 	else
 		l_main_quit();
 }
