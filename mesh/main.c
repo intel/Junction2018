@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
 	int status;
 	bool detached = true;
 	bool dbus_debug = false;
-	struct l_dbus *dbus;
+	struct l_dbus *dbus = NULL;
 	struct l_signal *signal = NULL;
 	sigset_t mask;
 	const char *config_dir = NULL;
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
 			if (!isdigit(*str)) {
 				l_error("Invalid controller index value");
 				status = EXIT_FAILURE;
-				goto options;
+				goto done;
 			}
 
 			index = atoi(str);
@@ -169,18 +169,18 @@ int main(int argc, char *argv[])
 		case 'h':
 			usage();
 			status = EXIT_SUCCESS;
-			goto options;
+			goto done;
 		default:
 			usage();
 			status = EXIT_FAILURE;
-			goto options;
+			goto done;
 		}
 	}
 
 	if (!mesh_init(index, config_dir)) {
 		l_error("Failed to initialize mesh");
 		status = EXIT_FAILURE;
-		goto options;
+		goto done;
 	}
 
 	sigemptyset(&mask);
@@ -194,7 +194,7 @@ int main(int argc, char *argv[])
 	if (!dbus) {
 		l_error("unable to connect to D-Bus");
 		status = EXIT_FAILURE;
-		goto options;
+		goto done;
 	}
 
 	if (dbus_debug)
@@ -219,13 +219,11 @@ int main(int argc, char *argv[])
 	status = l_main_run();
 
 done:
-	l_dbus_destroy(dbus);
-
-options:
 	if (signal)
 		l_signal_remove(signal);
 
 	mesh_cleanup();
+	l_dbus_destroy(dbus);
 	l_main_exit();
 
 	return status;
