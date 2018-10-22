@@ -732,7 +732,7 @@ static bool parse_bindings(json_object *jbindings, struct mesh_db_model *mod)
 	if (cnt > 0xffff)
 		return false;
 
-	mod->num_subs = cnt;
+	mod->num_bindings = cnt;
 
 	/* Allow empty bindings list */
 	if (!cnt)
@@ -809,7 +809,7 @@ static bool parse_models(json_object *jmodels, struct mesh_db_element *ele)
 
 		json_object_object_get_ex(jmodel, "bind", &jarray);
 
-		if (jarray && (json_object_get_type(jmodels) != json_type_array
+		if (jarray && (json_object_get_type(jarray) != json_type_array
 					|| !parse_bindings(jarray, mod)))
 			goto fail;
 
