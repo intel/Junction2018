@@ -38,12 +38,56 @@
 #include "mesh/cfgmod.h"
 #include "mesh/model.h"
 #include "mesh/mesh.h"
+#include "mesh/error.h"
 #include "mesh/dbus.h"
-
 
 #define ERROR_INTERFACE "org.bluez.mesh.Error"
 
 struct l_dbus *dbus;
+
+struct error_entry {
+	const char *dbus_err;
+	const char *default_desc;
+};
+
+/*
+ * Important: The entries in this table are ordered to enum
+ * values in mesh_error_t (error.h)
+ */
+static struct error_entry error_table[] =
+{
+	{ NULL, NULL },
+	{ ERROR_INTERFACE ".Failed", "Operation failed" },
+	{ ERROR_INTERFACE ".NotAuthorized", "Permission denied"},
+	{ ERROR_INTERFACE ".NotFound", "Object not found"},
+	{ ERROR_INTERFACE ".InvalidArgs", "Invalid arguments"},
+	{ ERROR_INTERFACE ".InProgress", "Already in progress"},
+	{ ERROR_INTERFACE ".AlreadyExists", "Already exists"}
+};
+
+struct l_dbus_message *dbus_error(struct l_dbus_message *msg, int err,
+							const char *description)
+{
+	int array_len = L_ARRAY_SIZE(error_table);
+
+	/* Default to ".Failed" */
+	if (!err || err >= array_len)
+		err = MESH_ERROR_FAILED;
+
+	if (description)
+		return l_dbus_message_new_error(msg,
+				error_table[err].dbus_err,
+				description);
+	else
+		return l_dbus_message_new_error(msg,
+				error_table[err].dbus_err,
+				error_table[err].default_desc);
+}
+
+struct l_dbus *dbus_get_bus(void)
+{
+	return dbus;
+}
 
 uint32_t dbus_get_byte_array(struct l_dbus_message_iter *array, uint8_t *buf,
 							uint32_t max_len)
@@ -119,87 +163,4 @@ bool dbus_append_byte_array(struct l_dbus_message_builder *builder,
 		return false;
 
 	return true;
-}
-
-struct l_dbus *dbus_get_bus(void)
-{
-	return dbus;
-}
-
-struct l_dbus_message *dbus_error_invalid_args(struct l_dbus_message *msg,
-						const char *description)
-{
-	if (description)
-		return l_dbus_message_new_error(msg,
-						ERROR_INTERFACE ".InvalidArgs",
-						description);
-	else
-		return l_dbus_message_new_error(msg,
-						ERROR_INTERFACE ".InvalidArgs",
-						"Invalid arguments");
-}
-
-struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg,
-						const char *description)
-{
-	if (description)
-		return l_dbus_message_new_error(msg,
-						ERROR_INTERFACE ".InProgress",
-						description);
-	else
-		return l_dbus_message_new_error(msg,
-						ERROR_INTERFACE ".InProgress",
-						"Already in progress");
-}
-
-struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
-						const char *description)
-{
-	if (description)
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".AlreadyExists",
-					description);
-	else
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".AlreadyExists",
-						"Already exists");
-}
-
-struct l_dbus_message *dbus_error_failed(struct l_dbus_message *msg,
-						const char *description)
-{
-	if (description)
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".Failed",
-					description);
-	else
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".Failed",
-						"Operation failed");
-}
-
-struct l_dbus_message *dbus_error_not_authorized(struct l_dbus_message *msg,
-						const char *description)
-{
-	if (description)
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".NotAuthorized",
-					description);
-	else
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".NotAuthorized",
-						"Permission denied");
-}
-
-struct l_dbus_message *dbus_error_not_found(struct l_dbus_message *msg,
-						const char *description)
-{
-	if (description)
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".NotFound",
-					description);
-	else
-		return l_dbus_message_new_error(msg,
-					ERROR_INTERFACE ".NotFound",
-						"Does not exist");
 }

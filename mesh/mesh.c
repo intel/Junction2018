@@ -287,7 +287,7 @@ static void attach_exit(void *data)
 	struct l_dbus_message *reply;
 	struct attach_data *pending = data;
 
-	reply = dbus_error_failed(pending->msg, "Failed. Exiting");
+	reply = dbus_error(pending->msg, MESH_ERROR_FAILED, "Failed. Exiting");
 	l_dbus_send(dbus_get_bus(), reply);
 	l_free(pending);
 }
@@ -300,13 +300,15 @@ void mesh_cleanup(void)
 	mgmt_unref(mgmt_mesh);
 
 	if (join_pending) {
-		reply = dbus_error_failed(join_pending->msg, "Failed. Exiting");
+		reply = dbus_error(join_pending->msg, MESH_ERROR_FAILED,
+							"Failed. Exiting");
 		l_dbus_send(dbus_get_bus(), reply);
 		l_free(join_pending);
 	}
 
 	l_queue_destroy(attach_queue, attach_exit);
 	node_cleanup_all();
+
 	l_queue_destroy(controllers, NULL);
 	l_dbus_object_remove_interface(dbus_get_bus(), BLUEZ_MESH_PATH,
 							MESH_NETWORK_INTERFACE);
@@ -450,7 +452,7 @@ static void prov_complete_cb(struct bt_mesh *mesh, uint8_t status,
 	//TODO agent_cancel(join_pending.agent);
 
 	if (status != MESH_STATUS_SUCCESS) {
-		reply = dbus_error_failed(join_pending->msg,
+		reply = dbus_error(join_pending->msg, MESH_ERROR_FAILED,
 							"Provisioning failed");
 		goto done;
 	}
@@ -482,12 +484,13 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 	l_debug("Join network request");
 
 	if (join_pending)
-		return dbus_error_busy(message, "Provisioning in progress");
+		return dbus_error(message, MESH_ERROR_BUSY,
+						"Provisioning in progress");
 
 	if (!l_dbus_message_get_arguments(message, "oasayasuay", &agent_path,
 						&iter_caps, &iter_uuid,
 						&iter_oob, &uri, &iter_comp))
-		return dbus_error_invalid_args(message, NULL);
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
 	join_pending = l_new(struct join_data, 1);
 
@@ -495,7 +498,8 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 
 	if (!l_dbus_message_iter_get_fixed_array(&iter_uuid,
 				join_pending->caps.uuid, &n) || n != 16) {
-		err_reply = dbus_error_invalid_args(message, "Bad device UUID");
+		err_reply = dbus_error(message, MESH_ERROR_INVALID_ARGS,
+							"Bad device UUID");
 		goto fail;
 	}
 
@@ -503,7 +507,7 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 	len = dbus_get_byte_array(&iter_comp, join_pending->composition,
 				L_ARRAY_SIZE(join_pending->composition));
 	if (len == 0) {
-		err_reply = dbus_error_invalid_args(message,
+		err_reply = dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Composition is required");
 		goto fail;
 	}
@@ -518,7 +522,8 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 	join_pending->node = node_init_pending(join_pending->composition, len,
 						join_pending->caps.uuid);
 	if (!join_pending->node) {
-		err_reply = dbus_error_failed(message, "Bad composition");
+		err_reply = dbus_error(message, MESH_ERROR_FAILED,
+							"Bad composition");
 		goto fail;
 	}
 	/* Finish initializing provisioning info */
@@ -536,7 +541,8 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 						prov_complete_cb, agent_cb))
 		return NULL;
 
-	err_reply = dbus_error_failed(message, "Failed to set up provisioning");
+	err_reply = dbus_error(message, MESH_ERROR_FAILED,
+					"Failed to set up provisioning");
 
 fail:
 	l_free(join_pending);
@@ -579,7 +585,9 @@ static void attach_ready_cb(int status, char *node_path, uint64_t token)
 		return;
 
 	if (status != MESH_ERROR_NONE) {
-		reply = dbus_error_failed(pending->msg, "Attach failed");
+		const char *desc = (status == MESH_ERROR_NOT_FOUND) ?
+				"Node match not found" : "Attach failed";
+		reply = dbus_error(pending->msg, status, desc);
 		goto done;
 	}
 
@@ -603,12 +611,14 @@ static struct l_dbus_message *attach_call(struct l_dbus *dbus,
 	l_debug("Attach");
 
 	if (!l_dbus_message_get_arguments(message, "ot", &app_path, &token))
-		return dbus_error_invalid_args(message, NULL);
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
 	sender = l_dbus_message_get_sender(message);
 
-	if (node_attach(app_path, sender, token, attach_ready_cb) != MESH_ERROR_NONE)
-		return dbus_error_not_found(message, "Matching node not found");
+	if (node_attach(app_path, sender, token, attach_ready_cb) !=
+								MESH_ERROR_NONE)
+		return dbus_error(message, MESH_ERROR_NOT_FOUND,
+						"Matching node not found");
 
 	pending = l_new(struct attach_data, 1);
 

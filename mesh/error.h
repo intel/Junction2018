@@ -18,10 +18,16 @@
  *
  */
 
+/*
+ * Important: Changes in this table must be reflected in the
+ * the entries of error_table[] in dbus.c
+ */
 enum {
 	MESH_ERROR_NONE,
 	MESH_ERROR_FAILED,
 	MESH_ERROR_NOT_AUTHORIZED,
 	MESH_ERROR_NOT_FOUND,
-	// TODO: add more error codes
+	MESH_ERROR_INVALID_ARGS,
+	MESH_ERROR_BUSY,
+	MESH_ERROR_ALREADY_EXISTS,
 } mesh_error_t;

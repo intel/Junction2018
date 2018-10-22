@@ -1218,25 +1218,26 @@ static struct l_dbus_message *send_call(struct l_dbus *dbus,
 	sender = l_dbus_message_get_sender(message);
 
 	if (strcmp(sender, node->owner))
-		return dbus_error_not_authorized(message, NULL);
+		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
 	if (!l_dbus_message_get_arguments(message, "yqqay", &ele_idx, &dst,
 							&app_idx, &iter_data))
-		return dbus_error_invalid_args(message, NULL);
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
 	if (ele_idx >= node_get_num_elements(node))
-		return dbus_error_invalid_args(message, "Bad element index");
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
+							"Bad element index");
 
 	src = node_get_primary(node) + ele_idx;
 
 	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
 	if (!len)
-		return dbus_error_invalid_args(message,
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
 	if (!mesh_model_send(node->net, src, dst, app_idx,
 				mesh_net_get_default_ttl(node->net), data, len))
-		return dbus_error_failed(message, NULL);
+		return dbus_error(message, MESH_ERROR_FAILED, NULL);
 
 	reply = l_dbus_message_new_method_return(message);
 	l_dbus_message_set_arguments(reply, "");
@@ -1262,25 +1263,26 @@ static struct l_dbus_message *publish_call(struct l_dbus *dbus,
 	sender = l_dbus_message_get_sender(message);
 
 	if (strcmp(sender, node->owner))
-		return dbus_error_not_authorized(message, NULL);
+		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
 	if (!l_dbus_message_get_arguments(message, "yqay", &ele_idx, &mod_id,
 								&iter_data))
-		return dbus_error_invalid_args(message, NULL);
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
 	if (ele_idx >= node_get_num_elements(node))
-		return dbus_error_invalid_args(message, "Bad element index");
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
+							"Bad element index");
 
 	src = node_get_primary(node) + ele_idx;
 
 	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
 	if (!len)
-		return dbus_error_invalid_args(message,
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
 	if (!mesh_model_publish(node->net, src, VENDOR_ID_MASK | mod_id,
 				mesh_net_get_default_ttl(node->net), data, len))
-		return dbus_error_failed(message, NULL);
+		return dbus_error(message, MESH_ERROR_FAILED, NULL);
 
 	reply = l_dbus_message_new_method_return(message);
 	l_dbus_message_set_arguments(reply, "");
@@ -1307,25 +1309,26 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 	sender = l_dbus_message_get_sender(message);
 
 	if (strcmp(sender, node->owner))
-		return dbus_error_not_authorized(message, NULL);
+		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
 	if (!l_dbus_message_get_arguments(message, "yuay", &ele_idx, &mod_id,
 								&iter_data))
-		return dbus_error_invalid_args(message, NULL);
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
 	if (ele_idx >= node_get_num_elements(node))
-		return dbus_error_invalid_args(message, "Bad element index");
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
+							"Bad element index");
 
 	src = node_get_primary(node) + ele_idx;
 
 	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
 	if (!len)
-		return dbus_error_invalid_args(message,
+		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
 	if (!mesh_model_publish(node->net, src, mod_id,
 				mesh_net_get_default_ttl(node->net), data, len))
-		return dbus_error_failed(message, NULL);
+		return dbus_error(message, MESH_ERROR_FAILED, NULL);
 
 	reply = l_dbus_message_new_method_return(message);
 	l_dbus_message_set_arguments(reply, "");

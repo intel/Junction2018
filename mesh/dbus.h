@@ -32,16 +32,5 @@ bool dbus_append_byte_array(struct l_dbus_message_builder *builder,
 						const uint8_t *data, int len);
 bool dbus_match_interface(struct l_dbus_message_iter *interfaces,
 							const char *match);
-
-struct l_dbus_message *dbus_error_invalid_args(struct l_dbus_message *msg,
-						const char *description);
-struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg,
-						const char *description);
-struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
-						const char *description);
-struct l_dbus_message *dbus_error_failed(struct l_dbus_message *msg,
-						const char *description);
-struct l_dbus_message *dbus_error_not_authorized(struct l_dbus_message *msg,
-						const char *description);
-struct l_dbus_message *dbus_error_not_found(struct l_dbus_message *msg,
+struct l_dbus_message *dbus_error(struct l_dbus_message *msg, int err,
 						const char *description);
