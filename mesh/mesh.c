@@ -303,6 +303,10 @@ void mesh_cleanup(void)
 		reply = dbus_error(join_pending->msg, MESH_ERROR_FAILED,
 							"Failed. Exiting");
 		l_dbus_send(dbus_get_bus(), reply);
+
+		if (join_pending->disc_watch)
+			dbus_disconnect_watch_remove(dbus_get_bus(),
+						join_pending->disc_watch);
 		l_free(join_pending);
 	}
 
@@ -342,10 +346,12 @@ const char *mesh_status_str(uint8_t err)
 }
 
 /* This is being called if the app exits unexpectedly */
-static void prov_disc_cb(void *user_data)
+static void prov_disc_cb(struct l_dbus *bus, void *user_data)
 {
 	if (!join_pending)
 		return;
+
+	l_dbus_message_ref(join_pending->msg);
 
 	//TODO:acceptor_cancel(&mesh);
 	node_cleanup(join_pending->node);
@@ -533,7 +539,7 @@ static struct l_dbus_message *join_network_call(struct l_dbus *dbus,
 	sender = l_dbus_message_get_sender(message);
 
 	join_pending->disc_watch = dbus_disconnect_watch_add(dbus, sender,
-								prov_disc_cb);
+							prov_disc_cb, NULL);
 	join_pending->agent = agent_path;
 	join_pending->msg = l_dbus_message_ref(message);
 

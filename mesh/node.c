@@ -69,6 +69,7 @@ struct mesh_node {
 	char *app_path;
 	char *owner;
 	char *path;
+	uint32_t disc_watch;
 	time_t upd_sec;
 	uint32_t seq_number;
 	uint32_t seq_min_cache;
@@ -177,6 +178,7 @@ static void free_element_path(void *a, void *b)
 {
 	struct node_element *element = a;
 
+	l_debug("ele path free %p", element->path);
 	l_free(element->path);
 	element->path = NULL;
 }
@@ -345,6 +347,9 @@ void node_cleanup(void *data)
 		if (storage_save_config(net, cfg_filename, true, NULL, NULL))
 			l_info("Saved final configuration to %s", cfg_filename);
 	}
+
+	if (node->disc_watch)
+		dbus_disconnect_watch_remove(dbus_get_bus(), node->disc_watch);
 
 	free_node_resources(node);
 }
@@ -1095,6 +1100,23 @@ static bool get_element_index_from_path(const char *path, uint8_t *ele_idx)
 	return str2hex(name + 3, 2, ele_idx, 1);
 }
 
+static void app_disc_cb(struct l_dbus *bus, void *user_data)
+{
+	struct mesh_node *node = user_data;
+
+	l_info("App %s disconnected (%u)", node->owner, node->disc_watch);
+
+	node->disc_watch = 0;
+
+	l_queue_foreach(node->elements, free_element_path, NULL);
+
+	l_free(node->owner);
+	node->owner = NULL;
+
+	l_free(node->app_path);
+	node->app_path = NULL;
+}
+
 static void get_managed_objects_cb(struct l_dbus_message *message,
 								void *user_data)
 {
@@ -1135,7 +1157,8 @@ static void get_managed_objects_cb(struct l_dbus_message *message,
 			goto fail;
 		}
 
-		if (!dbus_match_interface(&interfaces, MESH_ELEMENT_INTERFACE)) {
+		if (!dbus_match_interface(&interfaces,
+						MESH_ELEMENT_INTERFACE)) {
 			l_error("Interface %s not found on %s",
 						MESH_ELEMENT_INTERFACE, path);
 			goto fail;
@@ -1152,7 +1175,12 @@ static void get_managed_objects_cb(struct l_dbus_message *message,
 
 	register_node_object(node);
 	if (node->path) {
+		struct l_dbus *bus = dbus_get_bus();
+
+		node->disc_watch = dbus_disconnect_watch_add(bus, node->owner,
+							app_disc_cb, node);
 		req->cb(MESH_ERROR_NONE, node->path, token);
+
 		return;
 	}
 fail:
@@ -1190,7 +1218,6 @@ int node_attach(const char *app_path, const char *sender, uint64_t token,
 	req->node = node;
 	req->cb = cb;
 
-	l_info("Call managed objects");
 	l_dbus_method_call(dbus_get_bus(), sender, app_path,
 					L_DBUS_INTERFACE_OBJECT_MANAGER,
 					"GetManagedObjects", NULL,

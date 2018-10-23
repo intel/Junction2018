@@ -103,12 +103,15 @@ uint32_t dbus_get_byte_array(struct l_dbus_message_iter *array, uint8_t *buf,
 }
 
 uint32_t dbus_disconnect_watch_add(struct l_dbus *dbus, const char *name,
-					l_dbus_disconnect_func_t callback)
+					l_dbus_watch_func_t callback,
+					void *user_data)
 {
 	return l_dbus_add_signal_watch(dbus, "org.freedesktop.DBus",
 				"/org/freedesktop/DBus",
 				L_DBUS_INTERFACE_DBUS, "NameOwnerChanged",
-					L_DBUS_MATCH_NONE, callback, NULL);
+				L_DBUS_MATCH_ARGUMENT(0), name,
+				L_DBUS_MATCH_NONE,
+				callback, user_data);
 }
 
 bool dbus_disconnect_watch_remove(struct l_dbus *dbus, uint32_t id)

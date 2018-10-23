@@ -24,7 +24,8 @@
 bool dbus_init(struct l_dbus *dbus);
 struct l_dbus *dbus_get_bus(void);
 uint32_t dbus_disconnect_watch_add(struct l_dbus *dbus, const char *name,
-					l_dbus_disconnect_func_t callback);
+					l_dbus_watch_func_t callback,
+					void *user_data);
 bool dbus_disconnect_watch_remove(struct l_dbus *dbus, uint32_t id);
 uint32_t dbus_get_byte_array(struct l_dbus_message_iter *array, uint8_t *buf,
 							uint32_t max_len);
