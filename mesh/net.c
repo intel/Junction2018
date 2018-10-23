@@ -252,6 +252,8 @@ struct net_decode {
 	bool proxy;
 };
 
+static struct l_queue *nets;
+
 static inline struct mesh_subnet *get_primary_subnet(struct mesh_net *net)
 {
 	return l_queue_peek_head(net->subnets);
@@ -687,6 +689,11 @@ struct mesh_net *mesh_net_new(void)
 	net->app_keys = l_queue_new();
 
 	memset(&net->heartbeat, 0, sizeof(net->heartbeat));
+
+	if (!nets)
+		nets = l_queue_new();
+
+	//l_queue_push_head(nets, net);
 
 	return mesh_net_ref(net);
 }
@@ -2507,22 +2514,40 @@ static void packet_received(void *user_data, const void *data, uint8_t size,
 		send_relay_pkt(net, packet, size + 1);
 }
 
+struct net_queue_data {
+	struct mesh_io_recv_info *info;
+	const uint8_t *data;
+	uint16_t len;
+};
+
+static void net_rx(void *net_ptr, void *user_data)
+{
+	struct net_queue_data *data = user_data;
+	struct mesh_net *net = net_ptr;
+	int8_t rssi = 0;
+
+	if (data->info) {
+		net->instant = data->info->instant;
+		net->chan = data->info->chan;
+		rssi = data->info->rssi;
+	}
+
+	packet_received(net, data->data, data->len, rssi);
+}
+
 static void net_msg_recv(void *user_data, struct mesh_io_recv_info *info,
 					const uint8_t *data, uint16_t len)
 {
-	struct mesh_net *net = user_data;
-	int8_t rssi = 0;
+	struct net_queue_data net_data = {
+		.info = info,
+		.data = data + 1,
+		.len = len - 1,
+	};
 
-	if (len <= 2 || !net)
+	if (len <= 2)
 		return;
 
-	if (info) {
-		net->instant = info->instant;
-		net->chan = info->chan;
-		rssi = info->rssi;
-	}
-
-	packet_received(user_data, data + 1, len - 1, rssi);
+	l_queue_foreach(nets, net_rx, &net_data);
 }
 
 static void set_network_beacon(void *a, void *b)
@@ -2911,12 +2936,38 @@ bool mesh_net_set_beacon_mode(struct mesh_net *net, bool enable)
 	return true;
 }
 
+static bool is_this_net(const void *a, const void *b)
+{
+	return a == b;
+}
+
 bool mesh_net_attach(struct mesh_net *net, struct mesh_io *io)
 {
+	bool first;
+
 	if (!net)
 		return false;
 
+	first = l_queue_isempty(nets);
+	if (first) {
+		if (!nets)
+			nets = l_queue_new();
+
+		l_info("Register io cb");
+		mesh_io_register_recv_cb(io, MESH_IO_FILTER_BEACON,
+							beacon_recv, net);
+		mesh_io_register_recv_cb(io, MESH_IO_FILTER_NET,
+							net_msg_recv, NULL);
+		l_queue_foreach(net->subnets, start_network_beacon, net);
+	}
+
+	if (l_queue_find(nets, is_this_net, net))
+		return false;
+
+	l_queue_push_head(nets, net);
+
 	net->io = io;
+#if 0
 	if (net->provisioned) {
 		l_info("Register io cb");
 		mesh_io_register_recv_cb(io, MESH_IO_FILTER_BEACON,
@@ -2939,6 +2990,7 @@ bool mesh_net_attach(struct mesh_net *net, struct mesh_io *io)
 					acceptor_prov_close,
 					acceptor_prov_receive, net);
 	}
+#endif
 
 	return true;
 }
