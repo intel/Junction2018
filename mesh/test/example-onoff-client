@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+
+import sys
+import struct
+import numpy
+import dbus
+import dbus.service
+import dbus.exceptions
+
+try:
+  from gi.repository import GObject
+except ImportError:
+  import gobject as GObject
+from dbus.mainloop.glib import DBusGMainLoop
+
+bus = None
+mainloop = None
+node = None
+
+MESH_SERVICE_NAME = 'org.bluez.mesh'
+DBUS_PROP_IFACE =    'org.freedesktop.DBus.Properties'
+DBUS_OM_IFACE =      'org.freedesktop.DBus.ObjectManager'
+
+MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
+MESH_NODE_IFACE = 'org.bluez.mesh.Node'
+MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element'
+
+token = numpy.uint64(0x76bd4f2372477600)
+
+def attach_app_cb(node_path):
+    print('Mesh application registered ', node_path)
+    obj = bus.get_object(MESH_SERVICE_NAME, node_path)
+    global node
+    node = dbus.Interface(obj, MESH_NODE_IFACE)
+
+def error_cb(error):
+    print('D-Bus call failed: ' + str(error))
+
+def generic_reply_cb():
+    print('D-Bus call done')
+
+def interfaces_removed_cb(object_path, interfaces):
+    if not mesh_net:
+        return
+
+    if object_path == mesh_net[2]:
+        print('Service was removed')
+        mainloop.quit()
+
+class Application(dbus.service.Object):
+
+    def __init__(self, bus):
+        self.path = '/example'
+        self.elements = []
+        dbus.service.Object.__init__(self, bus, self.path)
+        self.add_element(FirstElement(bus, 0))
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_element(self, element):
+        self.elements.append(element)
+
+    @dbus.service.method(DBUS_OM_IFACE, out_signature='a{oa{sa{sv}}}')
+    def GetManagedObjects(self):
+        response = {}
+        print('GetManagedObjects')
+        for element in self.elements:
+            response[element.get_path()] = element.get_properties()
+        return response
+
+class Element(dbus.service.Object):
+    PATH_BASE = '/example/ele'
+
+    def __init__(self, bus, index):
+        self.path = self.PATH_BASE + format(index, '02x')
+        print(self.path)
+        self.models = []
+        self.bus = bus
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+                MESH_ELEMENT_IFACE: {
+                }
+        }
+
+    def add_model(self, model):
+        self.models.append(model)
+
+    @dbus.service.method(MESH_ELEMENT_IFACE,
+                                        in_signature="qqqay", out_signature="")
+    def MessageReceived(self, dest, source, key, data):
+        print('Default Message Received ')
+        for model in self.models:
+            model.process_message(source, key, data)
+
+    @dbus.service.method(MESH_ELEMENT_IFACE,
+                                        in_signature="", out_signature="")
+    def Test(self):
+      print('Test')
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+class Model():
+    def __init__(self, id, ele):
+        self.cmd_ops = []
+        self.id = id
+        self.ele = ele
+
+    def process_message(self, source, key, data):
+        print('Model process message')
+
+class OnOffClient(Model):
+    def __init__(self, id, ele):
+        Model.__init__(self, id, ele)
+        self.cmd_ops = { 0x8201, # get
+                         0x8202, # set
+                         0x8203 } # set unacknowledged
+        print('OnOff Client')
+        self.ele = ele
+
+    def reply_cb(state):
+        print("State ", end="");
+        print(state)
+
+    def send_message(self, dest, key, data, reply_cb):
+        print('OnOffClient send data')
+        node.Send(self.ele, dest, key, data, reply_handler=reply_cb,
+                  error_handler=error_cb)
+
+    def get_state(self, dest, key):
+        opcode = 0x8201
+        data = struct.pack('<H', opcode)
+        self.send_message(dest, key, data, self.reply_cb)
+
+    def set_state(self, dest, key, state):
+        opcode = 0x8202
+        data = struct.pack('<HB', opcode, state)
+        self.send_message(dest, key, data, self.reply_cb)
+
+    def process_message(self, source, key, data):
+        print('OnOfServer process message len ', end = '')
+        datalen = len(data)
+        print(datalen)
+
+        if datalen!=3:
+            return
+
+        opcode, state=struct.unpack('<HB',bytes(data))
+        if opcode != 0x8202 :
+            print('Bad opcode ', end='')
+            print(hex(opcode))
+            return
+
+        print('Got state ', end = '')
+        print(hex(state))
+
+class FirstElement(Element):
+    def __init__(self, bus, index):
+        Element.__init__(self, bus, 0x00)
+        self.add_model(OnOffClient(0x1001, 0x00))
+
+    def Test(self):
+      print('Test FirstElement')
+
+    def MessageReceived(self, dest, source, key, data):
+        print('Message received on Element 0')
+        for model in self.models:
+            model.process_message(source, key, data)
+
+def attach_app_error_cb(error):
+    print('Failed to register application: ' + str(error))
+    mainloop.quit()
+
+def main():
+
+    DBusGMainLoop(set_as_default=True)
+
+    global bus
+    bus = dbus.SystemBus()
+    global mainloop
+
+    mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME,
+                                             "/org/bluez/mesh"),
+                                             MESH_NETWORK_IFACE)
+    mesh_net.connect_to_signal('InterfacesRemoved', interfaces_removed_cb)
+
+    app = Application(bus)
+
+    mainloop = GObject.MainLoop()
+
+    print('Attach')
+    mesh_net.Attach(app.get_path(), token,
+                    reply_handler=attach_app_cb,
+                    error_handler=attach_app_error_cb)
+    mainloop.run()
+
+if __name__ == '__main__':
+    main()
