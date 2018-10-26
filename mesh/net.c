@@ -1210,14 +1210,6 @@ static bool match_msg_timeout(const void *a, const void *b)
 	return sar->msg_timeout == msg_timeout;
 }
 
-static bool match_sar_id(const void *a, const void *b)
-{
-	const struct mesh_sar *sar = a;
-	unsigned int id = L_PTR_TO_UINT(b);
-
-	return sar->id == id;
-}
-
 static bool match_seg_timeout(const void *a, const void *b)
 {
 	const struct mesh_sar *sar = a;
@@ -3289,28 +3281,25 @@ void mesh_net_send_seg(struct mesh_net *net, uint32_t net_key_id,
 	l_free(str);
 }
 
-unsigned int mesh_net_app_send(struct mesh_net *net, bool frnd_cred,
-				uint16_t src, uint16_t dst,
-				uint8_t key_id, uint8_t ttl,
-				uint32_t seq, uint32_t iv_index,
-				bool szmic,
+bool mesh_net_app_send(struct mesh_net *net, bool frnd_cred, uint16_t src,
+				uint16_t dst, uint8_t key_id, uint8_t ttl,
+				uint32_t seq, uint32_t iv_index, bool szmic,
 				const void *msg, uint16_t msg_len,
 				mesh_net_status_func_t status_func,
 				void *user_data)
 {
 	struct mesh_sar *payload = NULL;
 	uint8_t seg, seg_max;
-	unsigned int ret = 0;
 	bool result;
 
 	if (!net || msg_len > 384)
-		return 0;
+		return false;
 
 	if (!src)
 		src = net->src_addr;
 
 	if (!src || !dst)
-		return 0;
+		return false;
 
 	if (ttl == 0xff)
 		ttl = net->default_ttl;
@@ -3335,7 +3324,7 @@ unsigned int mesh_net_app_send(struct mesh_net *net, bool frnd_cred,
 		/* Adjust our seq_num for "virtual" delivery */
 		net->seq_num += seg_max;
 		mesh_net_next_seq_num(net);
-		return 0;
+		return true;
 	}
 
 	/* If Segmented, Cancel any OB segmented message to same DST */
@@ -3383,29 +3372,13 @@ unsigned int mesh_net_app_send(struct mesh_net *net, bool frnd_cred,
 			l_timeout_create(MSG_TO, outmsg_to, net, NULL);
 		payload->status_func = status_func;
 		payload->user_data = user_data;
-		ret = payload->id = ++net->sar_id_next;
+		payload->id = ++net->sar_id_next;
 	} else
 		mesh_sar_free(payload);
 
-	return ret;
+	return result;
 }
 
-void mesh_net_app_send_cancel(struct mesh_net *net, unsigned int id)
-{
-	struct mesh_sar *sar = l_queue_remove_if(net->sar_out, match_sar_id,
-						L_UINT_TO_PTR(id));
-
-	if (sar) {
-		l_info("Canceling OB %d", id);
-		if (sar->status_func)
-			sar->status_func(sar->remote, 2,
-				sar->buf, sar->len - 4,
-				sar->user_data);
-	}
-	mesh_sar_free(sar);
-}
-
-/* TODO: add net key index */
 void mesh_net_ack_send(struct mesh_net *net, uint32_t key_id,
 				uint32_t iv_index,
 				uint8_t ttl,

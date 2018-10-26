@@ -286,13 +286,11 @@ static bool pub_frnd_cred(struct mesh_net *net, uint16_t src, uint32_t mod_id)
 	return (mod->pub->credential != 0);
 }
 
-static unsigned int msg_send(struct mesh_net *net, bool credential,
-				uint16_t src, uint32_t dst,
-				uint8_t key_id, const uint8_t *key,
-				uint8_t *aad, uint8_t ttl,
-				const void *msg, uint16_t msg_len)
+static bool msg_send(struct mesh_net *net, bool credential, uint16_t src,
+		uint32_t dst, uint8_t key_id, const uint8_t *key,
+		uint8_t *aad, uint8_t ttl, const void *msg, uint16_t msg_len)
 {
-	unsigned int ret = 0;
+	bool ret = false;
 	uint32_t iv_index, seq_num;
 	uint8_t *out;
 	bool szmic = false;
@@ -667,7 +665,7 @@ done:
 	return result;
 }
 
-unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
+bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 				uint16_t src, uint8_t ttl,
 				const void *msg, uint16_t msg_len)
 {
@@ -681,7 +679,7 @@ unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 	/* print_packet("Mod Tx", msg, msg_len); */
 
 	if (!net || msg_len > 380)
-		return 0;
+		return false;
 
 	/* If SRC is 0, use the Primary Element */
 	if (src == 0)
@@ -690,7 +688,7 @@ unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 	mod = find_model(net, src, mod_id, NULL);
 	if (!mod) {
 		l_info("model %x not found", mod_id);
-		return 0;
+		return false;
 	}
 
 	gettimeofday(&tx_start, NULL);
@@ -698,7 +696,7 @@ unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 	target = mod->pub->addr;
 
 	if (IS_UNASSIGNED(target))
-		return 0;
+		return false;
 
 	if (target >= VIRTUAL_BASE) {
 		struct mesh_virtual *virt = l_queue_find(mesh_virtuals,
@@ -706,7 +704,7 @@ unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 				L_UINT_TO_PTR(target));
 
 		if (!virt)
-			return 0;
+			return false;
 
 		aad = virt->addr;
 		dst = virt->ota;
@@ -719,7 +717,7 @@ unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 	key = appkey_get_key(net, mod->pub->idx, &key_id);
 	if (!key) {
 		l_debug("no app key for (%x)", mod->pub->idx);
-		return 0;
+		return false;
 	}
 
 	l_debug("(%x) %p", mod->pub->idx, key);
@@ -730,10 +728,9 @@ unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 
 }
 
-unsigned int mesh_model_send(struct mesh_net *net,
-				uint16_t src, uint16_t target,
-				uint16_t app_idx, uint8_t ttl,
-				const void *msg, uint16_t msg_len)
+bool mesh_model_send(struct mesh_net *net, uint16_t src, uint16_t target,
+					uint16_t app_idx, uint8_t ttl,
+					const void *msg, uint16_t msg_len)
 {
 	uint8_t key_id;
 	const uint8_t *key;
@@ -741,7 +738,7 @@ unsigned int mesh_model_send(struct mesh_net *net,
 	/* print_packet("Mod Tx", msg, msg_len); */
 
 	if (!net || msg_len > 380)
-		return 0;
+		return false;
 
 	/* If SRC is 0, use the Primary Element */
 	if (src == 0)
@@ -750,14 +747,14 @@ unsigned int mesh_model_send(struct mesh_net *net,
 	gettimeofday(&tx_start, NULL);
 
 	if (IS_UNASSIGNED(target))
-		return 0;
+		return false;
 
 	if (app_idx == APP_IDX_DEV) {
 		key = node_get_device_key(mesh_net_local_node_get(net));
 	} else if (app_idx == APP_IDX_DEV) {
 		key = node_get_device_key(mesh_net_local_node_get(net));
 		if (!key)
-			return 0;
+			return false;
 
 		l_debug("(%x)", app_idx);
 		key_id = APP_ID_DEV;
@@ -765,7 +762,7 @@ unsigned int mesh_model_send(struct mesh_net *net,
 		key = appkey_get_key(net, app_idx, &key_id);
 		if (!key) {
 			l_debug("no app key for (%x)", app_idx);
-			return 0;
+			return false;
 		}
 
 		l_debug("(%x) %p", app_idx, key);

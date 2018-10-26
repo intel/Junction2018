@@ -119,11 +119,10 @@ int mesh_model_sub_ovr(struct mesh_net *net, uint16_t addr, uint32_t id,
 int mesh_model_sub_get(struct mesh_net *net, uint16_t addr, uint32_t id,
 			uint8_t *buf, uint16_t buf_size, uint16_t *size);
 uint16_t mesh_model_cfg_blk(uint8_t *pkt);
-unsigned int mesh_model_send(struct mesh_net *net,
-				uint16_t src, uint16_t target,
-				uint16_t app_idx, uint8_t ttl,
-				const void *msg, uint16_t msg_len);
-unsigned int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
+bool mesh_model_send(struct mesh_net *net, uint16_t src, uint16_t target,
+					uint16_t app_idx, uint8_t ttl,
+					const void *msg, uint16_t msg_len);
+bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 				uint16_t src, uint8_t ttl,
 				const void *msg, uint16_t msg_len);
 bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
