@@ -36,6 +36,7 @@
 #include "mesh/display.h"
 #include "mesh/cfgmod.h"
 #include "mesh/storage.h"
+#include "mesh/dbus.h"
 
 struct mesh_model {
 	const struct mesh_model_ops *cbs;
@@ -139,6 +140,25 @@ static struct mesh_model *find_model(struct mesh_net *net, uint16_t addr,
 	}
 
 	return node_get_model(node, (uint8_t) ele_idx, mod_id, fail);
+}
+
+static uint32_t convert_pub_period_to_ms(uint8_t pub_period)
+{
+	int n;
+
+	n = (pub_period & 0x3f);
+
+	switch (pub_period >> 6) {
+	default:
+		return n * 100;
+	case 2:
+		n *= 10;
+		/* Fall Through */
+	case 1:
+		return n * 1000;
+	case 3:
+		return n * 10 * 60 * 1000;
+	}
 }
 
 static void forward_model(void *a, void *b)
@@ -1338,4 +1358,71 @@ void mesh_model_del_virtual(struct mesh_net *net, uint32_t va24)
 
 	if (virt)
 		unref_virt(virt);
+}
+
+
+static void append_dict_uint16_array(struct l_dbus_message_builder *builder,
+					struct l_queue *q, const char *key)
+{
+	const struct l_queue_entry *entry;
+
+	l_dbus_message_builder_enter_dict(builder, "sv");
+	l_dbus_message_builder_append_basic(builder, 's', key);
+	l_dbus_message_builder_enter_variant(builder, "aq");
+	l_dbus_message_builder_enter_array(builder, "q");
+
+	for (entry = l_queue_get_entries(q); entry; entry = entry->next) {
+		uint16_t value = (uint16_t) L_PTR_TO_UINT(entry->data);
+
+		l_dbus_message_builder_append_basic(builder,'q', &value);
+	}
+
+	l_dbus_message_builder_leave_array(builder);
+	l_dbus_message_builder_leave_variant(builder);
+	l_dbus_message_builder_leave_dict(builder);
+}
+
+void model_build_config(void *model, void *msg_builder)
+{
+	struct l_dbus_message_builder *builder = msg_builder;
+	struct mesh_model *mod = model;
+	uint16_t id;
+
+	if (!l_queue_length(mod->subs) && !l_queue_length(mod->virtuals) &&
+				!mod->pub && !l_queue_length(mod->bindings))
+		return;
+
+	l_dbus_message_builder_enter_struct(builder, "qa{sv}");
+
+	/* Model id */
+	id = mod->id & 0xffff;
+	l_dbus_message_builder_append_basic(builder, 'q', &id);
+
+	l_dbus_message_builder_enter_array(builder, "{sv}");
+
+	/* For vendor models, add vendor id */
+	if ((mod->id & VENDOR_ID_MASK) != VENDOR_ID_MASK) {
+		uint16_t vendor = mod->id >> 16;
+		dbus_append_dict_entry_basic(builder, "Vendor", "q", &vendor);
+	}
+
+	/* Model bindings, if present */
+	if (l_queue_length(mod->bindings))
+		append_dict_uint16_array(builder, mod->bindings, "Bindings");
+
+	/* Model subscriptions, if present */
+	if (l_queue_length(mod->subs))
+		append_dict_uint16_array(builder, mod->bindings,
+							"Subscriptions");
+
+	/* Model periodic publication interval, if present */
+	if (mod->pub) {
+		uint32_t period = convert_pub_period_to_ms(mod->pub->period);
+		dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
+								&period);
+	}
+	/* TODO: add virtual subscriptons */
+
+	l_dbus_message_builder_leave_array(builder);
+	l_dbus_message_builder_leave_struct(builder);
 }

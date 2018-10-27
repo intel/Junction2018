@@ -141,3 +141,4 @@ void mesh_model_list_virtual(struct mesh_net *net);
 uint16_t mesh_model_opcode_set(uint32_t opcode, uint8_t *buf);
 bool mesh_model_opcode_get(const uint8_t *buf, uint16_t size,
 					uint32_t *opcode, uint16_t *n);
+void model_build_config(void *model, void *msg_builder);

@@ -267,7 +267,7 @@ Methods:
 
 			The data parameter is the incoming message.
 
-			void MessageReceivedVirtual(string dest, uint16 source,
+		void MessageReceivedVirtual(string dest, uint16 source,
 									uint16 key_index, array{byte} data)
 
 			This method is called by meshd daemon when a message arrives

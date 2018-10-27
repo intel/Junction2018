@@ -120,8 +120,6 @@ static void start_io(uint16_t index)
 	l_debug("Started mesh (io %p) on hci %u", mesh.io, index);
 
 	node_attach_io(io);
-
-	//TODO: register callbacks here
 }
 
 static void read_info_cb(uint8_t status, uint16_t length,
@@ -598,10 +596,14 @@ static void attach_ready_cb(int status, char *node_path, uint64_t token)
 	}
 
 	reply = l_dbus_message_new_method_return(pending->msg);
-	l_dbus_message_set_arguments(reply, "o", node_path);
+
+	node_build_attach_reply(reply, token);
+	l_debug("here");
+	//l_dbus_message_set_arguments(reply, "o", node_path);
 
 done:
 	l_dbus_send(dbus_get_bus(), reply);
+	l_debug("there");
 	l_queue_remove(attach_queue, pending);
 	l_free(pending);
 }
@@ -648,8 +650,9 @@ static void setup_network_interface(struct l_dbus_interface *iface)
 
 	l_dbus_interface_method(iface, "Cancel", 0, cancel_join_call, "", "");
 
-	l_dbus_interface_method(iface, "Attach", 0, attach_call, "o",
-				"ot", "node", "app", "token");
+	l_dbus_interface_method(iface, "Attach", 0, attach_call,
+				"oa(ya(qa{sv}))", "ot", "node", "configuration",
+				"app", "token");
 
 #if 0 //TODO
 	l_dbus_interface_method(iface, "Leave", 0, leave_network_call, "", "t");

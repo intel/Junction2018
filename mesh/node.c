@@ -1173,7 +1173,9 @@ static void get_managed_objects_cb(struct l_dbus_message *message,
 		goto fail;
 	}
 
+	/* Register node object with D-Bus */
 	register_node_object(node);
+
 	if (node->path) {
 		struct l_dbus *bus = dbus_get_bus();
 
@@ -1225,6 +1227,50 @@ int node_attach(const char *app_path, const char *sender, uint64_t token,
 					req, l_free);
 	return MESH_ERROR_NONE;
 
+}
+
+static void build_element_config(void *a, void *b)
+{
+	struct node_element *ele = a;
+	struct l_dbus_message_builder *builder = b;
+
+	l_debug("Element %u", ele->idx);
+
+	l_dbus_message_builder_enter_struct(builder, "ya(qa{sv})");
+
+	/* Element index */
+	l_dbus_message_builder_append_basic(builder, 'y', &ele->idx);
+
+	l_dbus_message_builder_enter_array(builder, "(qa{sv})");
+
+	/* Iterate over models */
+	l_queue_foreach(ele->models, model_build_config, builder);
+
+	l_dbus_message_builder_leave_array(builder);
+
+	l_dbus_message_builder_leave_struct(builder);
+}
+
+void node_build_attach_reply(struct l_dbus_message *reply, uint64_t token)
+{
+	struct mesh_node *node;
+	struct l_dbus_message_builder *builder;
+
+	node = l_queue_find(nodes, match_token, &token);
+	if (!node)
+		return;
+
+	builder = l_dbus_message_builder_new(reply);
+
+	/* Node object path */
+	l_dbus_message_builder_append_basic(builder, 'o', node->path);
+
+	/* Array of element configurations "a*/
+	l_dbus_message_builder_enter_array(builder, "(ya(qa{sv}))");
+	l_queue_foreach(node->elements, build_element_config, builder);
+	l_dbus_message_builder_leave_array(builder);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
 }
 
 static struct l_dbus_message *send_call(struct l_dbus *dbus,

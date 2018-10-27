@@ -36,6 +36,48 @@ def generic_error_cb(error):
 def generic_reply_cb():
     print('D-Bus call done')
 
+def unwrap(item):
+    if isinstance(item, dbus.Boolean):
+        return bool(item)
+    if isinstance(item, (dbus.UInt16, dbus.Int16,
+                         dbus.UInt32, dbus.Int32,
+                         dbus.UInt64, dbus.Int64)):
+        return int(item)
+    if isinstance(item, dbus.Byte):
+        return bytes([int(item)])
+    if isinstance(item, dbus.String):
+            return item
+    if isinstance(item, (dbus.Array, list, tuple)):
+        return [unwrap(x) for x in item]
+    if isinstance(item, (dbus.Dictionary, dict)):
+        return dict([(unwrap(x), unwrap(y)) for x, y in item.items()])
+
+    print('Dictionary item not handled')
+    print(type(item))
+    return item
+
+def attach_app_cb(node_path, dict_array):
+    print('Mesh application registered ', node_path)
+    print(type(node_path))
+    print(type(dict_array))
+    print(dict_array)
+
+    els = unwrap(dict_array)
+    print("Get Elements")
+    for el in els:
+        print(el)
+        idx = struct.unpack('b', el[0])[0]
+        print('Configuration for Element ', end='')
+        print(idx)
+        models = el[1]
+
+        element = app.get_element(idx)
+        element.set_model_config(models)
+
+    obj = bus.get_object(MESH_SERVICE_NAME, node_path)
+    global node
+    node = dbus.Interface(obj, MESH_NODE_IFACE)
+
 def interfaces_removed_cb(object_path, interfaces):
     if not mesh_net:
         return
@@ -96,6 +138,12 @@ class Element(dbus.service.Object):
     def add_model(self, model):
         self.models.append(model)
 
+    def get_index(self):
+        return self.index
+
+    def set_model_config(self, config):
+        print('Set element models config')
+
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="qqqay", out_signature="")
     def MessageReceived(self, dest, source, key, data):
@@ -106,8 +154,6 @@ class Element(dbus.service.Object):
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="", out_signature="")
-    def Test(self):
-      print('Test')
 
     def get_path(self):
         return dbus.ObjectPath(self.path)
@@ -165,12 +211,6 @@ class OnOffServer(Model):
 
         rsp_data = struct.pack('<HB', 0x8204, self.state)
         send_response(self.ele, source, key, rsp_data)
-
-def attach_app_cb(node_path):
-    print('Mesh application registered ', node_path)
-    obj = bus.get_object(MESH_SERVICE_NAME, node_path)
-    global node
-    node = dbus.Interface(obj, MESH_NODE_IFACE)
 
 def attach_app_error_cb(error):
     print('Failed to register application: ' + str(error))
