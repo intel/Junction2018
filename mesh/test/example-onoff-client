@@ -13,18 +13,20 @@ except ImportError:
   import gobject as GObject
 from dbus.mainloop.glib import DBusGMainLoop
 
-bus = None
-mainloop = None
-node = None
-
 MESH_SERVICE_NAME = 'org.bluez.mesh'
-DBUS_PROP_IFACE =    'org.freedesktop.DBus.Properties'
-DBUS_OM_IFACE =      'org.freedesktop.DBus.ObjectManager'
+DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
+DBUS_OM_IFACE = 'org.freedesktop.DBus.ObjectManager'
 
 MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
 MESH_NODE_IFACE = 'org.bluez.mesh.Node'
 MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element'
 
+VENDOR_ID_NONE = 0xffff
+
+app = None
+bus = None
+mainloop = None
+node = None
 token = numpy.uint64(0x76bd4f2372477600)
 
 def attach_app_cb(node_path):
@@ -53,13 +55,17 @@ class Application(dbus.service.Object):
         self.path = '/example'
         self.elements = []
         dbus.service.Object.__init__(self, bus, self.path)
-        self.add_element(FirstElement(bus, 0))
 
     def get_path(self):
         return dbus.ObjectPath(self.path)
 
     def add_element(self, element):
         self.elements.append(element)
+
+    def get_element(self, idx):
+        for ele in self.elements:
+            if ele.get_index() == idx:
+                return ele
 
     @dbus.service.method(DBUS_OM_IFACE, out_signature='a{oa{sa{sv}}}')
     def GetManagedObjects(self):
@@ -77,6 +83,7 @@ class Element(dbus.service.Object):
         print(self.path)
         self.models = []
         self.bus = bus
+        self.index = index
         dbus.service.Object.__init__(self, bus, self.path)
 
     def get_properties(self):
@@ -88,41 +95,54 @@ class Element(dbus.service.Object):
     def add_model(self, model):
         self.models.append(model)
 
+    def get_index(self):
+        return self.index
+
+    def set_model_config(self, config):
+        print('Set element models config')
+
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="qqqay", out_signature="")
     def MessageReceived(self, dest, source, key, data):
-        print('Default Message Received ')
+        print('Message Received on Element ', end='')
+        print(self.index)
         for model in self.models:
             model.process_message(source, key, data)
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="", out_signature="")
-    def Test(self):
-      print('Test')
-
     def get_path(self):
         return dbus.ObjectPath(self.path)
 
 class Model():
-    def __init__(self, id, ele):
+    def __init__(self, model_id, ele):
         self.cmd_ops = []
-        self.id = id
+        self.model_id = model_id
         self.ele = ele
+        self.vendor = VENDOR_ID_NONE
 
     def process_message(self, source, key, data):
         print('Model process message')
 
+    def set_publication(self, period):
+        self.period = period
+
+    def set_bindings(self, bindings):
+        self.bindings = bindings
+
+    def set_subscriptions(self, subs):
+        self.subs = subs
+
 class OnOffClient(Model):
-    def __init__(self, id, ele):
-        Model.__init__(self, id, ele)
+    def __init__(self, model_id, ele):
+        Model.__init__(self, model_id, ele)
         self.cmd_ops = { 0x8201, # get
                          0x8202, # set
                          0x8203 } # set unacknowledged
         print('OnOff Client')
-        self.ele = ele
 
     def reply_cb(state):
-        print("State ", end="");
+        print('State ', end='');
         print(state)
 
     def send_message(self, dest, key, data, reply_cb):
@@ -157,19 +177,6 @@ class OnOffClient(Model):
         print('Got state ', end = '')
         print(hex(state))
 
-class FirstElement(Element):
-    def __init__(self, bus, index):
-        Element.__init__(self, bus, 0x00)
-        self.add_model(OnOffClient(0x1001, 0x00))
-
-    def Test(self):
-      print('Test FirstElement')
-
-    def MessageReceived(self, dest, source, key, data):
-        print('Message received on Element 0')
-        for model in self.models:
-            model.process_message(source, key, data)
-
 def attach_app_error_cb(error):
     print('Failed to register application: ' + str(error))
     mainloop.quit()
@@ -181,6 +188,7 @@ def main():
     global bus
     bus = dbus.SystemBus()
     global mainloop
+    global app
 
     mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME,
                                              "/org/bluez/mesh"),
@@ -188,6 +196,9 @@ def main():
     mesh_net.connect_to_signal('InterfacesRemoved', interfaces_removed_cb)
 
     app = Application(bus)
+    first_ele = Element(bus, 0x00)
+    first_ele.add_model(OnOffClient(0x1001, 0x00))
+    app.add_element(first_ele)
 
     mainloop = GObject.MainLoop()
 
