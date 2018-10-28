@@ -1,6 +1,6 @@
 BlueZ D-Bus Mesh API description
 ***********************************
-rev.6
+rev.7
 
 Mesh Network Hierarchy
 ======================
@@ -66,7 +66,8 @@ Methods:
 			Cancels an outstanding Join method. Join will return with
 			org.bluez.mesh.Error.Canceled
 
-		object Attach(object app_defined_root, uint64 token)
+		(object node, array{byte, array{(uint16, dict}} configuration) Attach(
+									object app_defined_root, uint64 token)
 
 			After successful Provisioning/Joining (i.e., after the initial
 			successful Join call), this is the first method that an application
@@ -86,7 +87,25 @@ Methods:
 			as a result of successful Join() method call.
 
 			In case of success, the method call returns mesh node object (see
-			Mesh Node Hierarchy section).
+			Mesh Node Hierarchy section) and current configuration settings.
+			The configuration parameter is an array, where each entry is a
+			configuration per node element:
+				index (byte) - element index
+				array of model configurations:
+					model_id (uint16) - SIG Model ID
+					model_config - dictionary with the following keys defined:
+
+						array{uint16} Bindings : Indices of application keys
+									bound to the model
+						array{uint16} Subscriptions: Array of group addresses
+						array{string} VirtualSubscriptions : Array of
+									32-character ascii-hex strings representing
+									virtual label UUIDs
+						uint32 PublicationPeriod : Model publication period in
+									milliseconds
+						uint16 Vendor: a 16-bit Bluetooth-assigned Company
+									Identifier of the vendor.as defined by
+									Bluetooth SIG
 
 			PossibleErrors:
 				org.bluez.mesh.Error.InvalidArguments
@@ -156,7 +175,7 @@ Methods:
 				org.bluez.mesh.Error.DoesNotExist
 				org.bluez.mesh.Error.InvalidArguments
 
-		void VendorPublish(uint8 element, uint32 vendor_model, array{byte} data)
+		void VendorPublish(uint8 element, uint32 model_id, array{byte} data)
 
 			This method is used to send a publication originated by a local
 			vendor model. If the model does not exist, or it has no publication
@@ -165,8 +184,9 @@ Methods:
 			The element parameter is the unicast address of the element that
 			hosts the model.
 
-			The vendor_model parameter contains a model ID, as defined by the
-			vendor.
+			The model_id parameter is a 32-bit unsigned integer composed of a
+			16-bit Bluetooth-assigned Company Identifier and a 16-bit
+			vendor-assigned model identifier.
 
 			Because only one Publish record may exist per element-model, the
 			destination and key_index are obtained from the Publication
@@ -196,44 +216,6 @@ Properties:
 
 		uint16 unicast [read-only] : Primary unicast address assigned to
 			this node
-
-		array{uint16 model_id, dict config} sig_models_<xx>  [read-only] :
-			SIG defined models on <xx> element, where <xx> denotes a 2 digit
-			hex element index.
-
-			Dictionary entries of a model:
-
-				For the model configuration dictionary the following keys
-				are defined:
-					array{uint16} "Bindings" : Indices of application keys bound
-									to the model
-					array{uint16} "Subscriptions": Array of group addresses
-					array{string} "VirtualSubscriptions" : Array of 32-character
-									ascii-hex strings representing virtual
-									label UUIDs
-					uint16 "PublicationPeriod" : Model publication period
-
-					Model configuration dictionary may be empty
-
-
-		array{uint32 model_id, dict config} vendor_models_<xx> [read-only] :
-			Vendor defined models on <xx> element, where <xx> denotes
-			a 2 digit hex element index.
-
-			Dictionary entries of model:
-
-				For the model configuration dictionary the following keys
-				are defined:
-					array{uint16} "Bindings" : Indices of application keys bound
-									to the model
-					array{uint16} "Subscriptions": Array of group addresses
-					array{string} "VirtualSubscriptions" : Array of 32-character
-									ascii-hex strings representing virtual
-									label UUIDs
-					uint16 "PublicationPeriod" : Model publication period
-
-					Model configuration dictionary may be empty
-
 
 Mesh Application Hierarchy
 ===========================
@@ -303,6 +285,47 @@ Methods:
 			(in case a response is expected).
 
 			The data parameter is the incoming message.
+
+		void UpdateModelConfiguration(uint16 model_id, dict config)
+
+			This method is called by meshd daemon when BT SIG-defined
+			model's configuration is updated.
+
+			The model_id parameter contains BT SIG Model ID.
+
+			The config parameter is a dictionary with the following keys
+			defined:
+
+				array{uint16} Bindings : Indices of application keys
+									bound to the model
+				array{uint16} Subscriptions: Array of group addresses
+				array{string} VirtualSubscriptions : Array of
+									32-character ascii-hex strings representing
+									virtual label UUIDs
+				uint32 PublicationPeriod : Model publication period in
+									milliseconds
+
+		void UpdateVendorModelConfiguration(uint32 model_id, dict config)
+
+			This method is called by meshd daemon when a vendor-defined
+			model's configuration is updated.
+
+			The model_id parameter is a 32-bit unsigned integer composed of a
+			16-bit Bluetooth-assigned Company Identifier and a 16-bit
+			vendor-assigned model identifier.
+
+			The config parameter is a dictionary with the following keys
+			defined:
+
+				array{uint16} Bindings : Indices of application keys
+									bound to the model
+				array{uint16} Subscriptions: Array of group addresses
+				array{string} VirtualSubscriptions : Array of
+									32-character ascii-hex strings representing
+									virtual label UUIDs
+				uint32 PublicationPeriod : Model publication period in
+									milliseconds
+
 
 Mesh Attention Hierarchy
 ======================
