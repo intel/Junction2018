@@ -1353,7 +1353,7 @@ static struct l_dbus_message *publish_call(struct l_dbus *dbus,
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
-	if (!mesh_model_publish(node->net, src, VENDOR_ID_MASK | mod_id,
+	if (!mesh_model_publish(node->net, VENDOR_ID_MASK | mod_id, src,
 				mesh_net_get_default_ttl(node->net), data, len))
 		return dbus_error(message, MESH_ERROR_FAILED, NULL);
 
@@ -1399,7 +1399,7 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
-	if (!mesh_model_publish(node->net, src, mod_id,
+	if (!mesh_model_publish(node->net, mod_id, src,
 				mesh_net_get_default_ttl(node->net), data, len))
 		return dbus_error(message, MESH_ERROR_FAILED, NULL);
 

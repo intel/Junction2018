@@ -760,6 +760,130 @@ static bool parse_bindings(json_object *jbindings, struct mesh_db_model *mod)
 	return true;
 }
 
+static bool get_key_index(json_object *jobj, const char *keyword,
+								uint16_t *index)
+{
+	int idx;
+
+	if (!get_int(jobj, keyword, &idx))
+		return false;
+
+	if (!CHECK_KEY_IDX_RANGE(idx))
+		return false;
+
+	*index = (uint16_t) idx;
+	return true;
+}
+
+static struct mesh_db_pub *parse_model_publication(json_object *jpub)
+{
+	json_object *jvalue;
+	struct mesh_db_pub *pub;
+	int len, value;
+	char *str;
+
+	pub = l_new(struct mesh_db_pub, 1);
+	if (!pub)
+		return NULL;
+
+	json_object_object_get_ex(jpub, "address", &jvalue);
+	str = (char *)json_object_get_string(jvalue);
+	len = strlen(str);
+
+	switch (len) {
+	case 4:
+		if (sscanf(str, "%04hx", &pub->addr) != 1)
+			goto fail;
+		break;
+	case 32:
+		if (!str2hex(str, len, pub->virt_addr, 16))
+			goto fail;
+		pub->virt = true;
+		break;
+	default:
+		goto fail;
+	}
+
+	if (!get_key_index(jpub, "index", &pub->idx))
+		goto fail;
+
+	if (!get_int(jpub, "ttl", &value))
+		goto fail;
+	pub->ttl = (uint8_t) value;
+
+	if (!get_int(jpub, "period", &value))
+		goto fail;
+	pub->period = (uint8_t) value;
+
+	if (!get_int(jpub, "credentials", &value))
+		goto fail;
+	pub->credential = (uint8_t) value;
+
+	if (!get_int(jpub, "retransmit", &value))
+		goto fail;
+
+	pub->retransmit = (uint8_t) value;
+	return pub;
+
+fail:
+	l_free(pub);
+	return NULL;
+}
+
+static bool parse_model_subscriptions(json_object *jsubs,
+						struct mesh_db_model *mod)
+{
+	struct mesh_db_sub *subs;
+	int i, cnt;
+
+	if (json_object_get_type(jsubs) != json_type_array)
+		return NULL;
+
+	cnt = json_object_array_length(jsubs);
+	/* Allow empty array */
+	if (!cnt)
+		return true;
+
+	subs = l_new(struct mesh_db_sub, cnt);
+	if (!subs)
+		return false;
+
+	for (i = 0; i < cnt; ++i) {
+		char *str;
+		int len;
+		json_object *jvalue;
+
+		jvalue = json_object_array_get_idx(jsubs, i);
+		if (!jvalue)
+			return false;
+
+		str = (char *)json_object_get_string(jvalue);
+		len = strlen(str);
+
+		switch (len) {
+		case 4:
+			if (sscanf(str, "%04hx", &subs[i].src.addr) != 1)
+				goto fail;
+		break;
+		case 32:
+			if (!str2hex(str, len, subs[i].src.virt_addr, 16))
+				goto fail;
+			subs[i].virt = true;
+			break;
+		default:
+			goto fail;
+		}
+	}
+
+	mod->num_subs = cnt;
+	mod->subs = subs;
+
+	return true;
+fail:
+	l_free(subs);
+	return false;
+}
+
 static bool parse_models(json_object *jmodels, struct mesh_db_element *ele)
 {
 	int i, num_models;
@@ -813,7 +937,18 @@ static bool parse_models(json_object *jmodels, struct mesh_db_element *ele)
 					|| !parse_bindings(jarray, mod)))
 			goto fail;
 
-		/* TODO add pub/sub */
+		json_object_object_get_ex(jmodel, "publish", &jvalue);
+		if (jvalue) {
+			mod->pub = parse_model_publication(jvalue);
+			if (!mod->pub)
+				goto fail;
+		}
+
+		json_object_object_get_ex(jmodel, "subscribe", &jarray);
+
+		if (jarray && !parse_model_subscriptions(jarray, mod))
+			goto fail;
+
 		l_queue_push_tail(ele->models, mod);
 	}
 

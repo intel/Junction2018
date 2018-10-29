@@ -465,6 +465,7 @@ static int set_pub(struct mesh_model *mod, const uint8_t *mod_addr,
 		}
 	}
 
+	mod->pub = l_new(struct mesh_model_pub, 1);
 	if (b_virt) {
 		virt = l_queue_find(mesh_virtuals, find_virt_by_addr, mod_addr);
 		if (!virt) {
@@ -1222,6 +1223,7 @@ struct mesh_model *mesh_model_init(struct mesh_net *net, uint8_t ele_idx,
 		uint16_t mod_addr;
 		uint8_t *dst;
 
+		/* Add publication */
 		l_put_le16(db_mod->pub->addr, &mod_addr);
 		dst = db_mod->pub->virt ? db_mod->pub->virt_addr :
 							(uint8_t *) &mod_addr;

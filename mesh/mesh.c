@@ -598,12 +598,9 @@ static void attach_ready_cb(int status, char *node_path, uint64_t token)
 	reply = l_dbus_message_new_method_return(pending->msg);
 
 	node_build_attach_reply(reply, token);
-	l_debug("here");
-	//l_dbus_message_set_arguments(reply, "o", node_path);
 
 done:
 	l_dbus_send(dbus_get_bus(), reply);
-	l_debug("there");
 	l_queue_remove(attach_queue, pending);
 	l_free(pending);
 }

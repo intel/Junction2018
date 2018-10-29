@@ -7,6 +7,10 @@ import dbus
 import dbus.service
 import dbus.exceptions
 
+from threading import Timer
+import time
+
+
 try:
   from gi.repository import GObject
 except ImportError:
@@ -14,8 +18,8 @@ except ImportError:
 from dbus.mainloop.glib import DBusGMainLoop
 
 MESH_SERVICE_NAME = 'org.bluez.mesh'
-DBUS_PROP_IFACE =    'org.freedesktop.DBus.Properties'
-DBUS_OM_IFACE =      'org.freedesktop.DBus.ObjectManager'
+DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
+DBUS_OM_IFACE = 'org.freedesktop.DBus.ObjectManager'
 
 MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
 MESH_NODE_IFACE = 'org.bluez.mesh.Node'
@@ -58,14 +62,15 @@ def unwrap(item):
 
 def attach_app_cb(node_path, dict_array):
     print('Mesh application registered ', node_path)
-    print(type(node_path))
-    print(type(dict_array))
-    print(dict_array)
+
+    obj = bus.get_object(MESH_SERVICE_NAME, node_path)
+
+    global node
+    node = dbus.Interface(obj, MESH_NODE_IFACE)
 
     els = unwrap(dict_array)
     print("Get Elements")
     for el in els:
-        print(el)
         idx = struct.unpack('b', el[0])[0]
         print('Configuration for Element ', end='')
         print(idx)
@@ -73,10 +78,6 @@ def attach_app_cb(node_path, dict_array):
 
         element = app.get_element(idx)
         element.set_model_config(models)
-
-    obj = bus.get_object(MESH_SERVICE_NAME, node_path)
-    global node
-    node = dbus.Interface(obj, MESH_NODE_IFACE)
 
 def interfaces_removed_cb(object_path, interfaces):
     if not mesh_net:
@@ -91,6 +92,40 @@ def send_response(ele, dest, key, data):
         print(data)
         node.Send(ele, dest, key, data, reply_handler=generic_reply_cb,
                   error_handler=generic_error_cb)
+
+def send_publication(ele, model_id, data):
+        print('send publication ', end='')
+        print(data)
+        node.Publish(ele, model_id, data, reply_handler=generic_reply_cb,
+                  error_handler=generic_error_cb)
+
+class PubTimer():
+    def __init__(self):
+        self.seconds = None
+        self.func = None
+        self.thread = None
+        self.busy = False
+
+    def _timeout_cb(self):
+        self.func()
+        self.busy = True
+        self._schedule_timer()
+        self.busy =False
+
+    def _schedule_timer(self):
+        self.thread = Timer(self.seconds, self._timeout_cb)
+        self.thread.start()
+
+    def start(self, seconds, func):
+        self.func = func
+        self.seconds = seconds
+        if not self.busy:
+            self._schedule_timer()
+
+    def cancel(self):
+        if self.thread is not None:
+            self.thread.cancel()
+            self.thread = None
 
 class Application(dbus.service.Object):
 
@@ -141,8 +176,12 @@ class Element(dbus.service.Object):
     def get_index(self):
         return self.index
 
-    def set_model_config(self, config):
+    def set_model_config(self, configs):
         print('Set element models config')
+        for config in configs:
+            print(config)
+            mod_id = config[0]
+            self.UpdateModelConfiguration(mod_id, config[1])
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="qqqay", out_signature="")
@@ -151,6 +190,16 @@ class Element(dbus.service.Object):
         print(self.index)
         for model in self.models:
             model.process_message(source, key, data)
+
+    @dbus.service.method(MESH_ELEMENT_IFACE,
+                                        in_signature="q(sv)", out_signature="")
+
+    def UpdateModelConfiguration(self, model_id, config):
+        print('UpdateModelConfig')
+        for model in self.models:
+            if model_id == model.get_id():
+                model.set_config(config)
+                return
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="", out_signature="")
@@ -164,18 +213,39 @@ class Model():
         self.model_id = model_id
         self.ele = ele
         self.vendor = VENDOR_ID_NONE
+        self.bindings = []
+        self.subs = []
+        self.virt_subs = []
+        self.pub_period = 0
+        self.pub_id = 0
+
+    def get_id(self):
+        return self.model_id
 
     def process_message(self, source, key, data):
         print('Model process message')
 
     def set_publication(self, period):
-        self.period = period
+        self.pub_period = period
 
-    def set_bindings(self, bindings):
-        self.bindings = bindings
-
-    def set_subscriptions(self, subs):
-        self.subs = subs
+    def set_config(self, config):
+        if 'Bindings' in config:
+            self.bindings = config.get('Bindings')
+            print('Bindings: ', end='')
+            print(self.bindings)
+        if 'Subscriptions' in config:
+            self.subs = config.get('Subscriptions')
+            print('Subscriptions: ', end='')
+            print(self.subs)
+        if 'VirtualSubscriptions' in config:
+            self.virt_subs = config.get('VirtualSubscriptions')
+            print('Virtual Subscriptions: ', end='')
+            print(self.virt_subs)
+        if 'PublicationPeriod' in config:
+            self.set_publication(config.get('PublicationPeriod'))
+            print('Model publication period ', end='')
+            print(self.pub_period, end='')
+            print(' ms')
 
 class OnOffServer(Model):
     def __init__(self, model_id, ele):
@@ -183,9 +253,11 @@ class OnOffServer(Model):
         self.cmd_ops = { 0x8201, # get
                          0x8202, # set
                          0x8203 } # set unacknowledged
+
         print("OnOff Server ", end="")
         self.state = 0
         print('State ', end='')
+        self.timer = PubTimer()
 
     def process_message(self, source, key, data):
         datalen = len(data)
@@ -211,6 +283,23 @@ class OnOffServer(Model):
 
         rsp_data = struct.pack('<HB', 0x8204, self.state)
         send_response(self.ele, source, key, rsp_data)
+
+    def publish(self):
+        print('Publish')
+        data = struct.pack('B', self.state)
+        send_publication(self.ele, self.model_id, data)
+
+    def set_publication(self, period):
+        if period == 0:
+            self.timer.cancel()
+            return
+
+        # We do not handle ms in this example 
+        if period < 1000:
+            return
+
+        self.pub_period = period
+        self.timer.start(period/1000, self.publish)
 
 def attach_app_error_cb(error):
     print('Failed to register application: ' + str(error))
@@ -241,6 +330,7 @@ def main():
     mesh_net.Attach(app.get_path(), token,
                     reply_handler=attach_app_cb,
                     error_handler=attach_app_error_cb)
+
     mainloop.run()
 
 if __name__ == '__main__':
