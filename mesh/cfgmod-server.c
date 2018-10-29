@@ -83,9 +83,10 @@ static bool config_pub_get(struct mesh_net *net, uint16_t src, uint16_t dst,
 	struct mesh_model_pub *pub = NULL;
 	int status;
 
-	if (size == 4)
+	if (size == 4) {
 		mod_id = l_get_le16(pkt + 2);
-	else if (size == 6) {
+		mod_id |= VENDOR_ID_MASK;
+	} else if (size == 6) {
 		mod_id = l_get_le16(pkt + 2) << 16;
 		mod_id |= l_get_le16(pkt + 4);
 	} else
@@ -132,6 +133,7 @@ static bool config_pub_set(struct mesh_net *net, uint16_t src, uint16_t dst,
 		period = pkt[7];
 		retransmit = pkt[8];
 		mod_id = l_get_le16(pkt + 9);
+		mod_id |= VENDOR_ID_MASK;
 		break;
 
 	case 13:
@@ -150,6 +152,7 @@ static bool config_pub_set(struct mesh_net *net, uint16_t src, uint16_t dst,
 		period = pkt[21];
 		retransmit = pkt[22];
 		mod_id = l_get_le16(pkt + 23);
+		mod_id |= VENDOR_ID_MASK;
 		break;
 
 	case 27:
@@ -242,6 +245,7 @@ static bool config_sub_get(struct mesh_net *net, uint16_t src, uint16_t dst,
 
 	case 4:
 		mod_id = l_get_le16(pkt + 2);
+		mod_id |= VENDOR_ID_MASK;
 		n = mesh_model_opcode_set(OP_CONFIG_MODEL_SUB_LIST, msg);
 		status = msg + n;
 		msg[n++] = 0;
@@ -297,13 +301,15 @@ static void config_sub_set(struct mesh_net *net, uint16_t src, uint16_t dst,
 		if (opcode != OP_CONFIG_MODEL_SUB_DELETE_ALL)
 			return;
 		mod_id = l_get_le16(pkt + 2);
+		mod_id |= VENDOR_ID_MASK;
 		break;
 	case 6:
 		if (virt)
 			return;
-		if (opcode != OP_CONFIG_MODEL_SUB_DELETE_ALL)
+		if (opcode != OP_CONFIG_MODEL_SUB_DELETE_ALL) {
 			mod_id = l_get_le16(pkt + 4);
-		else {
+			mod_id |= VENDOR_ID_MASK;
+		} else {
 			mod_id = l_get_le16(pkt + 2) << 16;
 			mod_id |= l_get_le16(pkt + 4);
 		}
@@ -318,6 +324,7 @@ static void config_sub_set(struct mesh_net *net, uint16_t src, uint16_t dst,
 		if (!virt)
 			return;
 		mod_id = l_get_le16(pkt + 18);
+		mod_id |= VENDOR_ID_MASK;
 		break;
 	case 22:
 		if (!virt)
@@ -420,6 +427,7 @@ static void model_app_list(struct mesh_net *net, uint16_t src, uint16_t dst,
 		n = mesh_model_opcode_set(OP_MODEL_APP_LIST, msg);
 		status = msg + n;
 		mod_id = l_get_le16(pkt + 2);
+		mod_id |= VENDOR_ID_MASK;
 		l_put_le16(ele_addr, msg + 1 + n);
 		l_put_le16(mod_id, msg + 3 + n);
 		n += 5;
@@ -466,6 +474,7 @@ static bool model_app_bind(struct mesh_net *net, uint16_t src, uint16_t dst,
 
 	case 6:
 		mod_id = l_get_le16(pkt + 4);
+		mod_id |= VENDOR_ID_MASK;
 		break;
 	case 8:
 		mod_id = l_get_le16(pkt + 4) << 16;

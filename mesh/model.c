@@ -123,6 +123,35 @@ static bool find_virt_by_addr(const void *a, const void *b)
 	return memcmp(virt->addr, addr, 16) == 0;
 }
 
+static bool match_model_id(const void *a, const void *b)
+{
+	const struct mesh_model *model = a;
+	uint32_t id = L_PTR_TO_UINT(b);
+
+	return (mesh_model_get_model_id(model) == id);
+}
+
+static struct mesh_model *get_model(struct mesh_node *node, uint8_t ele_idx,
+						uint32_t id, int *status)
+{
+	struct l_queue *models;
+	struct mesh_model *model;
+
+	models = node_get_element_models(node, ele_idx, status);
+	if (!models) {
+		*status = MESH_STATUS_INVALID_ADDRESS;
+		return NULL;
+	}
+
+	model = l_queue_find(models, match_model_id, L_UINT_TO_PTR(id));
+
+	if (status)
+		*status = (model) ? MESH_STATUS_SUCCESS :
+						MESH_STATUS_INVALID_MODEL;
+
+	return model;
+}
+
 static struct mesh_model *find_model(struct mesh_net *net, uint16_t addr,
 						uint32_t mod_id, int *fail)
 {
@@ -139,7 +168,7 @@ static struct mesh_model *find_model(struct mesh_net *net, uint16_t addr,
 		return NULL;
 	}
 
-	return node_get_model(node, (uint8_t) ele_idx, mod_id, fail);
+	return get_model(node, (uint8_t) ele_idx, mod_id, fail);
 }
 
 static uint32_t convert_pub_period_to_ms(uint8_t pub_period)
@@ -865,7 +894,7 @@ int mesh_model_pub_set(struct mesh_net *net, uint16_t addr, uint32_t id,
 		return false;
 	}
 
-	mod = node_get_model(node, (uint8_t) ele_idx, id, &fail);
+	mod = get_model(node, (uint8_t) ele_idx, id, &fail);
 	if (!mod)
 		return fail;
 
@@ -894,18 +923,11 @@ struct mesh_model_pub *mesh_model_pub_get(struct mesh_net *net, uint8_t ele_idx,
 		return NULL;
 	}
 
-	mod = node_get_model(node, ele_idx, mod_id, status);
+	mod = get_model(node, ele_idx, mod_id, status);
 	if (!mod)
 		return NULL;
 
 	return mod->pub;
-}
-
-uint32_t mesh_model_get_model_id(const struct mesh_model *model)
-{
-	if (!model)
-		return 0xffffffff; /* TODO: use define */
-	return model->id;
 }
 
 void mesh_model_free(void *data)
@@ -962,6 +984,11 @@ static void restore_model_state(void *data)
 		cbs->pub(mod->pub);
 }
 
+uint32_t mesh_model_get_model_id(const struct mesh_model *model)
+{
+	return model->id;
+}
+
 /* This registers an internal model, i.e. implemented within meshd */
 bool mesh_model_register(struct mesh_net *net, uint8_t ele_idx,
 					uint32_t mod_id,
@@ -978,7 +1005,7 @@ bool mesh_model_register(struct mesh_net *net, uint8_t ele_idx,
 	if (!node)
 		return false;
 
-	mod = node_get_model(node, ele_idx, mod_id, NULL);
+	mod = get_model(node, ele_idx, mod_id, NULL);
 	if (!mod)
 		return false;
 
@@ -1110,7 +1137,7 @@ int mesh_model_sub_add(struct mesh_net *net, uint16_t addr, uint32_t id,
 		return false;
 	}
 
-	mod = node_get_model(node, (uint8_t) ele_idx, id, &fail);
+	mod = get_model(node, (uint8_t) ele_idx, id, &fail);
 	if (!mod)
 		return fail;
 

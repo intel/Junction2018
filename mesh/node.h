@@ -65,8 +65,6 @@ uint32_t node_get_sequence_number(struct mesh_node *node);
 int node_get_element_idx(struct mesh_node *node, uint16_t ele_addr);
 struct l_queue *node_get_element_models(struct mesh_node *node, uint8_t ele_idx,
 								int *status);
-struct mesh_model *node_get_model(struct mesh_node *node, uint8_t ele_idx,
-						uint32_t id, int *status);
 uint16_t node_get_crpl(struct mesh_node *node);
 bool node_init_from_storage(struct mesh_node *node, struct mesh_net *net,
 				struct mesh_db_node *db_node, bool local);

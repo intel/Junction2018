@@ -129,14 +129,6 @@ static bool match_key_idx(const void *a, const void *b)
 	return (L_PTR_TO_UINT(a) == L_PTR_TO_UINT(b));
 }
 
-static bool match_model_id(const void *a, const void *b)
-{
-	const struct mesh_model *model = a;
-	uint32_t id = L_PTR_TO_UINT(b);
-
-	return (mesh_model_get_model_id(model) == id);
-}
-
 struct mesh_node *node_find_by_addr(uint16_t addr)
 {
 	if (!IS_UNICAST(addr))
@@ -501,31 +493,6 @@ struct l_queue *node_get_element_models(struct mesh_node *node,
 	return ele->models;
 }
 
-struct mesh_model *node_get_model(struct mesh_node *node, uint8_t ele_idx,
-						uint32_t id, int *status)
-{
-	struct l_queue *models;
-	struct mesh_model *model;
-
-	if (!node) {
-		if (status)
-			*status = MESH_STATUS_INVALID_ADDRESS;
-		return NULL;
-	}
-
-	models = node_get_element_models(node, ele_idx, status);
-	if (!models)
-		return NULL;
-
-	model = l_queue_find(models, match_model_id, L_UINT_TO_PTR(id));
-
-	if (status)
-		*status = (model) ? MESH_STATUS_SUCCESS :
-						MESH_STATUS_INVALID_MODEL;
-
-	return model;
-}
-
 uint8_t node_default_ttl_get(struct mesh_node *node)
 {
 	if (!node)
@@ -848,7 +815,7 @@ uint16_t node_generate_comp(struct mesh_node *node, uint8_t *buf, uint16_t sz)
 			mod_id = mesh_model_get_model_id(
 					(const struct mesh_model *) mod);
 
-			if ((mod_id >> 16) == 0xffff) {
+			if ((mod_id & VENDOR_ID_MASK) == VENDOR_ID_MASK) {
 				if (n + 2 > sz)
 					goto element_done;
 
