@@ -60,7 +60,7 @@ static void send_pub_status(struct mesh_net *net, uint16_t src, uint16_t dst,
 	msg[n++] = ttl;
 	msg[n++] = period;
 	msg[n++] = retransmit;
-	if (mod_id < 0x10000) {
+	if (mod_id < 0x10000 || mod_id > VENDOR_ID_MASK) {
 		l_put_le16(mod_id, msg + n);
 		n += 2;
 	} else {
@@ -212,7 +212,7 @@ static void send_sub_status(struct mesh_net *net, uint16_t src, uint16_t dst,
 	n += 2;
 	l_put_le16(addr, msg + n);
 	n += 2;
-	if (mod >= 0x10000) {
+	if (mod >= 0x10000 && mod < VENDOR_ID_MASK) {
 		l_put_le16(mod >> 16, msg + n);
 		l_put_le16(mod, msg + n + 2);
 		n += 4;
@@ -245,7 +245,6 @@ static bool config_sub_get(struct mesh_net *net, uint16_t src, uint16_t dst,
 
 	case 4:
 		mod_id = l_get_le16(pkt + 2);
-		mod_id |= VENDOR_ID_MASK;
 		n = mesh_model_opcode_set(OP_CONFIG_MODEL_SUB_LIST, msg);
 		status = msg + n;
 		msg[n++] = 0;
@@ -253,6 +252,7 @@ static bool config_sub_get(struct mesh_net *net, uint16_t src, uint16_t dst,
 		n += 2;
 		l_put_le16(mod_id, msg + n);
 		n += 2;
+		mod_id |= VENDOR_ID_MASK;
 		break;
 
 	case 6:
@@ -392,7 +392,7 @@ static void send_model_app_status(struct mesh_net *net, uint16_t src,
 	n += 2;
 	l_put_le16(idx, msg + n);
 	n += 2;
-	if (id > 0xffff) {
+	if (id >= 0x10000 && id < VENDOR_ID_MASK) {
 		l_put_le16(id >> 16, msg + n);
 		n += 2;
 	}
@@ -427,9 +427,9 @@ static void model_app_list(struct mesh_net *net, uint16_t src, uint16_t dst,
 		n = mesh_model_opcode_set(OP_MODEL_APP_LIST, msg);
 		status = msg + n;
 		mod_id = l_get_le16(pkt + 2);
-		mod_id |= VENDOR_ID_MASK;
 		l_put_le16(ele_addr, msg + 1 + n);
 		l_put_le16(mod_id, msg + 3 + n);
+		mod_id |= VENDOR_ID_MASK;
 		n += 5;
 		break;
 	case 6:
