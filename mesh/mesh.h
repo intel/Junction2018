@@ -18,6 +18,10 @@
  *
  */
 
+#define MESH_NETWORK_INTERFACE "org.bluez.mesh.Network"
+#define MESH_NODE_INTERFACE "org.bluez.mesh.Node"
+#define MESH_ELEMENT_INTERFACE "org.bluez.mesh.Element"
+
 bool mesh_init(uint16_t index, const char *in_config_name);
 void mesh_cleanup(void);
 bool mesh_dbus_init(struct l_dbus *dbus);

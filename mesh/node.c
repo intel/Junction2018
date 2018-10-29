@@ -41,9 +41,6 @@
 
 #define MIN_COMP_SIZE 14
 
-#define MESH_NODE_INTERFACE "org.bluez.mesh.Node"
-#define MESH_ELEMENT_INTERFACE "org.bluez.mesh.Element"
-
 #define MESH_NODE_PATH_PREFIX "/node"
 #define MESH_ELEMENT_PATH_PREFIX "/ele"
 
@@ -1438,50 +1435,17 @@ bool node_dbus_init(struct l_dbus *bus)
 	return true;
 }
 
-void node_forward_message(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
-					uint16_t src, uint16_t key_idx,
-					uint16_t size, const uint8_t *data)
+const char *node_get_owner(struct mesh_node *node)
+{
+	return node->owner;
+}
+
+const char *node_get_element_path(struct mesh_node *node, uint8_t ele_idx)
 {
 	struct node_element *ele;
-	struct l_dbus *dbus = dbus_get_bus();
-	struct l_dbus_message *message;
-	struct l_dbus_message_builder *builder;
-
-	l_debug("Send \"MessageReceived\"");
 
 	ele = l_queue_find(node->elements, match_element_idx,
 							L_UINT_TO_PTR(ele_idx));
-	if (!ele || !ele->path || !node->owner)
-		return;
 
-	message = l_dbus_message_new_method_call(dbus, node->owner, ele->path,
-			MESH_ELEMENT_INTERFACE, "MessageReceived");
-
-	builder = l_dbus_message_builder_new(message);
-
-	if (!l_dbus_message_builder_append_basic(builder, 'q', &dst))
-		goto error;
-
-	if (!l_dbus_message_builder_append_basic(builder, 'q', &src))
-		goto error;
-
-	if (!l_dbus_message_builder_append_basic(builder, 'q', &key_idx))
-		goto error;
-
-	if (!dbus_append_byte_array(builder, data, size))
-		goto error;
-
-	if (!l_dbus_message_builder_finalize(builder))
-		goto error;
-
-	l_dbus_send(dbus, message);
-
-error:
-	l_dbus_message_builder_destroy(builder);
-}
-
-void node_forward_virt_message(struct mesh_node *node, uint8_t ele_idx,
-			uint8_t virt[16], uint16_t src, uint16_t key_idx,
-			uint16_t size, const uint8_t *data)
-{
+	return ele->path;
 }

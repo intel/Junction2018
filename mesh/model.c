@@ -556,6 +556,57 @@ static int add_sub(struct mesh_net *net, struct mesh_model *mod,
 	return MESH_STATUS_SUCCESS;
 }
 
+
+static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
+					uint16_t src, uint16_t key_idx,
+					uint16_t size, const uint8_t *data)
+{
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	struct l_dbus_message_builder *builder;
+	const char *owner;
+	const char *path;
+
+	l_debug("Send \"MessageReceived\"");
+
+	owner = node_get_owner(node);
+	path = node_get_element_path(node, ele_idx);
+	if (!path || !owner)
+		return;
+
+	message = l_dbus_message_new_method_call(dbus, owner, path,
+				MESH_ELEMENT_INTERFACE, "MessageReceived");
+
+	builder = l_dbus_message_builder_new(message);
+
+	if (!l_dbus_message_builder_append_basic(builder, 'q', &dst))
+		goto error;
+
+	if (!l_dbus_message_builder_append_basic(builder, 'q', &src))
+		goto error;
+
+	if (!l_dbus_message_builder_append_basic(builder, 'q', &key_idx))
+		goto error;
+
+	if (!dbus_append_byte_array(builder, data, size))
+		goto error;
+
+	if (!l_dbus_message_builder_finalize(builder))
+		goto error;
+
+	l_dbus_send(dbus, message);
+
+error:
+	l_dbus_message_builder_destroy(builder);
+}
+
+/*TODO */
+static void send_virt_msg_rcvd(struct mesh_node *node, uint8_t ele_idx,
+			uint8_t virt[16], uint16_t src, uint16_t key_idx,
+			uint16_t size, const uint8_t *data)
+{
+}
+
 bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 			uint32_t seq, uint32_t iv_index, uint8_t ttl,
 			uint16_t src, uint16_t dst, uint8_t key_id,
@@ -660,11 +711,11 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 		/* The message has not been handled by internal models */
 		if (forward.has_dst && !forward.done) {
 			if (!forward.virt)
-				node_forward_message(node, i, dst, src,
+				send_msg_rcvd(node, i, dst, src,
 					forward.idx, forward.size,
 					forward.data);
 			else
-				node_forward_virt_message(node, i,
+				send_virt_msg_rcvd(node, i,
 						forward.virt->addr, src,
 						forward.idx, forward.size,
 						forward.data);

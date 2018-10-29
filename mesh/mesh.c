@@ -41,8 +41,6 @@
 #include "mesh/error.h"
 #include "mesh/mesh.h"
 
-#define MESH_NETWORK_INTERFACE "org.bluez.mesh.Network"
-
 #define MESH_COMP_MAX_LEN 378
 
 /*
