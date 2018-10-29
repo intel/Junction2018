@@ -316,16 +316,19 @@ bool node_init_from_storage(struct mesh_node *node, struct mesh_net *net,
 	if (num_ele > 0xff)
 		return false;
 
+	if (local)
+		node->net = mesh_net_ref(net);
+
 	node->num_ele = num_ele;
-	if (num_ele != 0 && !add_elements(node, db_node))
+	if (num_ele != 0 && !add_elements(node, db_node)) {
+		mesh_net_unref(net);
 		return false;
+	}
 
 	node->primary = db_node->unicast;
 
 	memcpy(node->dev_uuid, db_node->uuid, 16);
 
-	if (local)
-		node->net = mesh_net_ref(net);
 
 	return true;
 }
