@@ -122,7 +122,7 @@ uint16_t mesh_model_cfg_blk(uint8_t *pkt);
 bool mesh_model_send(struct mesh_net *net, uint16_t src, uint16_t target,
 					uint16_t app_idx, uint8_t ttl,
 					const void *msg, uint16_t msg_len);
-bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
+int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 				uint16_t src, uint8_t ttl,
 				const void *msg, uint16_t msg_len);
 bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,

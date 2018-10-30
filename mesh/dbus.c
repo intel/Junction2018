@@ -62,7 +62,8 @@ static struct error_entry error_table[] =
 	{ ERROR_INTERFACE ".NotFound", "Object not found"},
 	{ ERROR_INTERFACE ".InvalidArgs", "Invalid arguments"},
 	{ ERROR_INTERFACE ".InProgress", "Already in progress"},
-	{ ERROR_INTERFACE ".AlreadyExists", "Already exists"}
+	{ ERROR_INTERFACE ".AlreadyExists", "Already exists"},
+	{ ERROR_INTERFACE ".DoesNotExist", "Does not exist"}
 };
 
 struct l_dbus_message *dbus_error(struct l_dbus_message *msg, int err,

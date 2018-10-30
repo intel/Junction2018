@@ -1309,6 +1309,7 @@ static struct l_dbus_message *publish_call(struct l_dbus *dbus,
 	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
 	uint32_t len;
 	struct l_dbus_message *reply;
+	int result;
 
 	l_debug("Publish");
 
@@ -1333,9 +1334,11 @@ static struct l_dbus_message *publish_call(struct l_dbus *dbus,
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
-	if (!mesh_model_publish(node->net, VENDOR_ID_MASK | mod_id, src,
-				mesh_net_get_default_ttl(node->net), data, len))
-		return dbus_error(message, MESH_ERROR_FAILED, NULL);
+	result = mesh_model_publish(node->net, VENDOR_ID_MASK | mod_id, src,
+				mesh_net_get_default_ttl(node->net), data, len);
+
+	if (result != MESH_ERROR_NONE)
+		return dbus_error(message, result, NULL);
 
 	reply = l_dbus_message_new_method_return(message);
 	l_dbus_message_set_arguments(reply, "");
@@ -1356,6 +1359,7 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
 	uint32_t len;
 	struct l_dbus_message *reply;
+	int result;
 
 	l_debug("Publish");
 
@@ -1380,9 +1384,11 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
-	if (!mesh_model_publish(node->net, mod_id, src,
-				mesh_net_get_default_ttl(node->net), data, len))
-		return dbus_error(message, MESH_ERROR_FAILED, NULL);
+	result = mesh_model_publish(node->net, mod_id, src,
+				mesh_net_get_default_ttl(node->net), data, len);
+
+	if (result != MESH_ERROR_NONE)
+		return dbus_error(message, result, NULL);
 
 	reply = l_dbus_message_new_method_return(message);
 	l_dbus_message_set_arguments(reply, "");

@@ -36,6 +36,7 @@
 #include "mesh/display.h"
 #include "mesh/cfgmod.h"
 #include "mesh/storage.h"
+#include "mesh/error.h"
 #include "mesh/dbus.h"
 
 struct mesh_model {
@@ -766,7 +767,7 @@ done:
 	return result;
 }
 
-bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
+int mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 				uint16_t src, uint8_t ttl,
 				const void *msg, uint16_t msg_len)
 {
@@ -776,11 +777,12 @@ bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 	uint16_t dst;
 	uint8_t key_id;
 	const uint8_t *key;
+	bool result;
 
 	/* print_packet("Mod Tx", msg, msg_len); */
 
 	if (!net || msg_len > 380)
-		return false;
+		return MESH_ERROR_INVALID_ARGS;
 
 	/* If SRC is 0, use the Primary Element */
 	if (src == 0)
@@ -788,8 +790,13 @@ bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 
 	mod = find_model(net, src, mod_id, NULL);
 	if (!mod) {
-		l_info("model %x not found", mod_id);
-		return false;
+		l_debug("model %x not found", mod_id);
+		return MESH_ERROR_NOT_FOUND;
+	}
+
+	if (!mod->pub) {
+		l_debug("publication doesn't exist", mod_id);
+		return MESH_ERROR_DOES_NOT_EXIST;
 	}
 
 	gettimeofday(&tx_start, NULL);
@@ -824,8 +831,10 @@ bool mesh_model_publish(struct mesh_net *net, uint32_t mod_id,
 	l_debug("(%x) %p", mod->pub->idx, key);
 	l_debug("key_id %x", key_id);
 
-	return msg_send(net, pub_frnd_cred(net, src, mod_id), src,
+	result = msg_send(net, pub_frnd_cred(net, src, mod_id), src,
 				dst, key_id, key, aad, ttl, msg, msg_len);
+
+	return result ? MESH_ERROR_NONE : MESH_ERROR_FAILED;
 
 }
 
