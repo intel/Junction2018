@@ -87,16 +87,16 @@ def interfaces_removed_cb(object_path, interfaces):
         print('Service was removed')
         mainloop.quit()
 
-def send_response(ele, dest, key, data):
+def send_response(path, dest, key, data):
         print('send response ', end='')
         print(data)
-        node.Send(ele, dest, key, data, reply_handler=generic_reply_cb,
+        node.Send(path, dest, key, data, reply_handler=generic_reply_cb,
                   error_handler=generic_error_cb)
 
-def send_publication(ele, model_id, data):
+def send_publication(path, model_id, data):
         print('send publication ', end='')
         print(data)
-        node.Publish(ele, model_id, data, reply_handler=generic_reply_cb,
+        node.Publish(path, model_id, data, reply_handler=generic_reply_cb,
                   error_handler=generic_error_cb)
 
 class PubTimer():
@@ -171,6 +171,7 @@ class Element(dbus.service.Object):
         }
 
     def add_model(self, model):
+        model.set_path(self.path)
         self.models.append(model)
 
     def get_index(self):
@@ -208,16 +209,19 @@ class Element(dbus.service.Object):
         return dbus.ObjectPath(self.path)
 
 class Model():
-    def __init__(self, model_id, ele):
+    def __init__(self, model_id):
         self.cmd_ops = []
         self.model_id = model_id
-        self.ele = ele
         self.vendor = VENDOR_ID_NONE
         self.bindings = []
         self.subs = []
         self.virt_subs = []
         self.pub_period = 0
         self.pub_id = 0
+        self.path = None
+
+    def set_path(self, path):
+        self.path = path
 
     def get_id(self):
         return self.model_id
@@ -248,8 +252,8 @@ class Model():
             print(' ms')
 
 class OnOffServer(Model):
-    def __init__(self, model_id, ele):
-        Model.__init__(self, model_id, ele)
+    def __init__(self, model_id):
+        Model.__init__(self, model_id)
         self.cmd_ops = { 0x8201, # get
                          0x8202, # set
                          0x8203 } # set unacknowledged
@@ -282,12 +286,12 @@ class OnOffServer(Model):
             print(self.state)
 
         rsp_data = struct.pack('<HB', 0x8204, self.state)
-        send_response(self.ele, source, key, rsp_data)
+        send_response(self.path, source, key, rsp_data)
 
     def publish(self):
         print('Publish')
         data = struct.pack('B', self.state)
-        send_publication(self.ele, self.model_id, data)
+        send_publication(self.path, self.model_id, data)
 
     def set_publication(self, period):
         if period == 0:
@@ -321,7 +325,7 @@ def main():
 
     app = Application(bus)
     first_ele = Element(bus, 0x00)
-    first_ele.add_model(OnOffServer(0x1000, 0x00))
+    first_ele.add_model(OnOffServer(0x1000))
     app.add_element(first_ele)
 
     mainloop = GObject.MainLoop()

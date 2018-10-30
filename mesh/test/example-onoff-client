@@ -129,6 +129,7 @@ class Element(dbus.service.Object):
         }
 
     def add_model(self, model):
+        model.set_path(self.path)
         self.models.append(model)
 
     def get_index(self):
@@ -151,11 +152,14 @@ class Element(dbus.service.Object):
         return dbus.ObjectPath(self.path)
 
 class Model():
-    def __init__(self, model_id, ele):
+    def __init__(self, model_id):
         self.cmd_ops = []
         self.model_id = model_id
-        self.ele = ele
         self.vendor = VENDOR_ID_NONE
+        self.path = None
+
+    def set_path(self, path):
+        self.path = path
 
     def process_message(self, source, key, data):
         print('Model process message')
@@ -170,31 +174,31 @@ class Model():
         self.subs = subs
 
 class OnOffClient(Model):
-    def __init__(self, model_id, ele):
-        Model.__init__(self, model_id, ele)
+    def __init__(self, model_id):
+        Model.__init__(self, model_id)
         self.cmd_ops = { 0x8201, # get
                          0x8202, # set
                          0x8203 } # set unacknowledged
         print('OnOff Client')
 
-    def reply_cb(state):
+    def _reply_cb(state):
         print('State ', end='');
         print(state)
 
-    def send_message(self, dest, key, data, reply_cb):
+    def _send_message(self, dest, key, data, reply_cb):
         print('OnOffClient send data')
-        node.Send(self.ele, dest, key, data, reply_handler=reply_cb,
+        node.Send(self.path, dest, key, data, reply_handler=reply_cb,
                   error_handler=error_cb)
 
     def get_state(self, dest, key):
         opcode = 0x8201
         data = struct.pack('<H', opcode)
-        self.send_message(dest, key, data, self.reply_cb)
+        self._send_message(dest, key, data, self._reply_cb)
 
     def set_state(self, dest, key, state):
         opcode = 0x8202
         data = struct.pack('<HB', opcode, state)
-        self.send_message(dest, key, data, self.reply_cb)
+        self.send_message(dest, key, data, self._reply_cb)
 
     def process_message(self, source, key, data):
         print('OnOfServer process message len ', end = '')
@@ -233,7 +237,7 @@ def main():
 
     app = Application(bus)
     first_ele = Element(bus, 0x00)
-    first_ele.add_model(OnOffClient(0x1001, 0x00))
+    first_ele.add_model(OnOffClient(0x1001))
     app.add_element(first_ele)
 
     mainloop = GObject.MainLoop()

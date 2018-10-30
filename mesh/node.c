@@ -124,6 +124,17 @@ static bool match_element_idx(const void *a, const void *b)
 	return (element->idx == index);
 }
 
+static bool match_element_path(const void *a, const void *b)
+{
+	const struct node_element *element = a;
+	const char *path = b;
+
+	if (!element->path)
+		return false;
+
+	return (!strcmp(element->path, path));
+}
+
 static bool match_key_idx(const void *a, const void *b)
 {
 	return (L_PTR_TO_UINT(a) == L_PTR_TO_UINT(b));
@@ -1245,9 +1256,9 @@ static struct l_dbus_message *send_call(struct l_dbus *dbus,
 						void *user_data)
 {
 	struct mesh_node *node = user_data;
-	const char *sender;
+	const char *sender, *ele_path;
 	struct l_dbus_message_iter iter_data;
-	uint8_t ele_idx;
+	struct node_element *ele;
 	uint16_t dst, app_idx, src;
 	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
 	uint32_t len;
@@ -1260,15 +1271,16 @@ static struct l_dbus_message *send_call(struct l_dbus *dbus,
 	if (strcmp(sender, node->owner))
 		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
-	if (!l_dbus_message_get_arguments(message, "yqqay", &ele_idx, &dst,
+	if (!l_dbus_message_get_arguments(message, "oqqay", &ele_path, &dst,
 							&app_idx, &iter_data))
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
-	if (ele_idx >= node_get_num_elements(node))
-		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
-							"Bad element index");
+	ele = l_queue_find(node->elements, match_element_path, ele_path);
+	if (!ele)
+		return dbus_error(message, MESH_ERROR_NOT_FOUND,
+							"Element not found");
 
-	src = node_get_primary(node) + ele_idx;
+	src = node_get_primary(node) + ele->idx;
 
 	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
 	if (!len)
@@ -1290,10 +1302,10 @@ static struct l_dbus_message *publish_call(struct l_dbus *dbus,
 						void *user_data)
 {
 	struct mesh_node *node = user_data;
-	const char *sender;
+	const char *sender, *ele_path;
 	struct l_dbus_message_iter iter_data;
 	uint16_t mod_id, src;
-	uint8_t ele_idx;
+	struct node_element *ele;
 	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
 	uint32_t len;
 	struct l_dbus_message *reply;
@@ -1305,15 +1317,16 @@ static struct l_dbus_message *publish_call(struct l_dbus *dbus,
 	if (strcmp(sender, node->owner))
 		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
-	if (!l_dbus_message_get_arguments(message, "yqay", &ele_idx, &mod_id,
+	if (!l_dbus_message_get_arguments(message, "oqay", &ele_path, &mod_id,
 								&iter_data))
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
-	if (ele_idx >= node_get_num_elements(node))
-		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
-							"Bad element index");
+	ele = l_queue_find(node->elements, match_element_path, ele_path);
+	if (!ele)
+		return dbus_error(message, MESH_ERROR_NOT_FOUND,
+							"Element not found");
 
-	src = node_get_primary(node) + ele_idx;
+	src = node_get_primary(node) + ele->idx;
 
 	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
 	if (!len)
@@ -1335,11 +1348,11 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 						void *user_data)
 {
 	struct mesh_node *node = user_data;
-	const char *sender;
+	const char *sender, *ele_path;
 	struct l_dbus_message_iter iter_data;
 	uint16_t src;
 	uint32_t mod_id;
-	uint8_t ele_idx;
+	struct node_element *ele;
 	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
 	uint32_t len;
 	struct l_dbus_message *reply;
@@ -1351,15 +1364,16 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 	if (strcmp(sender, node->owner))
 		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
-	if (!l_dbus_message_get_arguments(message, "yuay", &ele_idx, &mod_id,
+	if (!l_dbus_message_get_arguments(message, "ouay", &ele_path, &mod_id,
 								&iter_data))
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
-	if (ele_idx >= node_get_num_elements(node))
-		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
-							"Bad element index");
+	ele = l_queue_find(node->elements, match_element_path, ele_path);
+	if (!ele)
+		return dbus_error(message, MESH_ERROR_NOT_FOUND,
+							"Element not found");
 
-	src = node_get_primary(node) + ele_idx;
+	src = node_get_primary(node) + ele->idx;
 
 	len = dbus_get_byte_array(&iter_data, data, L_ARRAY_SIZE(data));
 	if (!len)
@@ -1378,12 +1392,14 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 
 static void setup_node_interface(struct l_dbus_interface *iface)
 {
-	l_dbus_interface_method(iface, "Send", 0, send_call, "", "yqqay",
-				"element", "destination", "key", "data");
-	l_dbus_interface_method(iface, "Publish", 0, publish_call, "", "yqay",
-						"element", "model", "data");
+	l_dbus_interface_method(iface, "Send", 0, send_call, "", "oqqay",
+						"element_path", "destination",
+						"key", "data");
+	l_dbus_interface_method(iface, "Publish", 0, publish_call, "", "oqay",
+					"element_path", "model", "data");
 	l_dbus_interface_method(iface, "VendorPublish", 0, vendor_publish_call,
-					"", "yuay", "element", "model", "data");
+						"", "ouay", "element_path",
+						"model", "data");
 
 	/*TODO: Properties */
 }

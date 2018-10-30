@@ -130,13 +130,14 @@ Object path	/org/bluez/mesh/node<xxxx>
 
 Methods:
 
-		void Send(uint8 element, uint16 destination, uint16 key_index,
+		void Send(object element_path, uint16 destination, uint16 key_index,
 								array{byte} data)
 
 			This method is used to send a message originated by a local model.
 
-			The element parameter is the unicast address of a valid element on
-			this node.
+			The element_path parameter is the object path of an element from
+			a collection of the application elements (see Mesh Application
+			Hierarchy section).
 
 			The destination parameter contains the destination address. This
 			destination must be a uint16 to a unicast address, or a well known
@@ -154,15 +155,17 @@ Methods:
 			Possible errors:
 				org.bluez.mesh.Error.NotAuthorized
 				org.bluez.mesh.Error.InvalidArguments
+				org.bluez.mesh.Error.NotFound
 
-		void Publish(uint8 element, uint16 model, array{byte} data)
+		void Publish(object element_path, uint16 model, array{byte} data)
 
 			This method is used to send a publication originated by a local
 			model. If the model does not exist, or it has no publication record,
 			the method returns org.bluez.mesh.Error.DoesNotExist error.
 
-			The element parameter is the unicast address of a valid element
-			that hosts the model.
+			The element_path parameter is the object path of an element from
+			a collection of the application elements (see Mesh Application
+			Hierarchy section).
 
 			The model parameter contains a model ID, as defined by the
 			Bluetooth SIG.
@@ -174,15 +177,17 @@ Methods:
 			Possible errors:
 				org.bluez.mesh.Error.DoesNotExist
 				org.bluez.mesh.Error.InvalidArguments
+				org.bluez.mesh.Error.NotFound
 
-		void VendorPublish(uint8 element, uint32 model_id, array{byte} data)
+		void VendorPublish(object element_path, uint32 model_id, array{byte} data)
 
 			This method is used to send a publication originated by a local
 			vendor model. If the model does not exist, or it has no publication
 			record, the method returns org.bluez.mesh.Error.DoesNotExist error.
 
-			The element parameter is the unicast address of the element that
-			hosts the model.
+			The element_path parameter is the object path of an element from
+			a collection of the application elements (see Mesh Application
+			Hierarchy section).
 
 			The model_id parameter is a 32-bit unsigned integer composed of a
 			16-bit Bluetooth-assigned Company Identifier and a 16-bit
@@ -195,6 +200,7 @@ Methods:
 			Possible errors:
 				org.bluez.mesh.Error.DoesNotExist
 				org.bluez.mesh.Error.InvalidArguments
+				org.bluez.mesh.Error.NotFound
 
 Properties:
 		dict Features [read-only]
