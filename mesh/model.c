@@ -226,14 +226,7 @@ static void forward_model(void *a, void *b)
 	if (!fwd->has_dst)
 		return;
 
-
-	/*
-	 * TODO: models shall be registered with a list of supported opcodes and
-	 * element address. Iterate through the list of opcodes to see if the
-	 * model is an addressee.
-	 * If this is an internal registered model, check for a "bind" callback.
-	 * For an external ("user") model, send D-Bus method (signal?) (TBD)
-	 */
+	/* Return, if this is not a internal model */
 	if (!mod->cbs)
 		return;
 
@@ -586,6 +579,86 @@ static int add_sub(struct mesh_net *net, struct mesh_model *mod,
 	return MESH_STATUS_SUCCESS;
 }
 
+static void append_dict_uint16_array(struct l_dbus_message_builder *builder,
+					struct l_queue *q, const char *key)
+{
+	const struct l_queue_entry *entry;
+
+	l_dbus_message_builder_enter_dict(builder, "sv");
+	l_dbus_message_builder_append_basic(builder, 's', key);
+	l_dbus_message_builder_enter_variant(builder, "aq");
+	l_dbus_message_builder_enter_array(builder, "q");
+
+	for (entry = l_queue_get_entries(q); entry; entry = entry->next) {
+		uint16_t value = (uint16_t) L_PTR_TO_UINT(entry->data);
+
+		l_dbus_message_builder_append_basic(builder,'q', &value);
+	}
+
+	l_dbus_message_builder_leave_array(builder);
+	l_dbus_message_builder_leave_variant(builder);
+	l_dbus_message_builder_leave_dict(builder);
+}
+
+static struct l_dbus_message *create_config_update_msg(struct mesh_node *node,
+					uint8_t ele_idx, uint32_t id,
+					struct l_dbus_message_builder **builder)
+{
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	const char *owner;
+	const char *path;
+	uint16_t model_id;
+
+	owner = node_get_owner(node);
+	path = node_get_element_path(node, ele_idx);
+	if (!path || !owner)
+		return NULL;
+
+	if (id > VENDOR_ID_MASK) {
+		l_debug("Send \"UpdateModelConfiguration\"");
+		message = l_dbus_message_new_method_call(dbus, owner, path,
+						MESH_ELEMENT_INTERFACE,
+						"UpdateModelConfiguration");
+		model_id = (uint16_t) id;
+	} else {
+		l_debug("Send \"UpdateVendorModelConfiguration\"");
+		message = l_dbus_message_new_method_call(dbus, owner, path,
+					MESH_ELEMENT_INTERFACE,
+					"UpdateVendorModelConfiguration");
+	}
+
+	*builder = l_dbus_message_builder_new(message);
+
+	if (id > VENDOR_ID_MASK)
+		l_dbus_message_builder_append_basic(*builder, 'q', &model_id);
+	else
+		l_dbus_message_builder_append_basic(*builder, 'u', &id);
+
+	return message;
+}
+
+static void update_model_pub_period(struct mesh_node *node, uint8_t ele_idx,
+					uint32_t model_id, uint32_t period)
+{
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	struct l_dbus_message_builder *builder;
+
+	message = create_config_update_msg(node, ele_idx, model_id, &builder);
+	if (!message)
+		return;
+
+	l_dbus_message_builder_enter_array(builder, "{sv}");
+	dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
+								&period);
+
+	l_dbus_message_builder_leave_array(builder);
+	if (l_dbus_message_builder_finalize(builder))
+				l_dbus_send(dbus, message);
+
+	l_dbus_message_builder_destroy(builder);
+}
 
 static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
 					uint16_t src, uint16_t key_idx,
@@ -881,7 +954,6 @@ bool mesh_model_send(struct mesh_net *net, uint16_t src, uint16_t target,
 
 	return msg_send(net, false, src, target, key_id, key, NULL, ttl,
 			msg, msg_len);
-
 }
 
 int mesh_model_pub_set(struct mesh_net *net, uint16_t addr, uint32_t id,
@@ -893,6 +965,7 @@ int mesh_model_pub_set(struct mesh_net *net, uint16_t addr, uint32_t id,
 	int ele_idx = -1;
 	struct mesh_model *mod;
 	struct mesh_node *node;
+	int result;
 
 	node = mesh_net_local_node_get(net);
 	if (node)
@@ -913,12 +986,29 @@ int mesh_model_pub_set(struct mesh_net *net, uint16_t addr, uint32_t id,
 	if (!appkey_have_key(net, idx))
 		return MESH_STATUS_INVALID_APPKEY;
 
-	return set_pub(mod, mod_addr, idx, cred_flag, ttl, period, retransmit,
+	result = set_pub(mod, mod_addr, idx, cred_flag, ttl, period, retransmit,
 								b_virt, dst);
+
+	if (result != MESH_STATUS_SUCCESS)
+		return result;
+
+	/* TODO: save to storage */
+
+	/* TODO: If internal model, call registered callbacks */
+	if (mod->cbs)
+		return MESH_STATUS_SUCCESS;
+
 	/*
-	 * TODO: Add standardized Publication Change notification to model
-	 * definition
+	 * If the publication address is set to unassigned address value,
+	 * send zero value as publication period
 	 */
+	if (IS_UNASSIGNED(*dst))
+		period = 0;
+
+	update_model_pub_period(node, ele_idx, id,
+					convert_pub_period_to_ms(period));
+
+	return MESH_STATUS_SUCCESS;
 }
 
 struct mesh_model_pub *mesh_model_pub_get(struct mesh_net *net, uint8_t ele_idx,
@@ -1449,28 +1539,6 @@ void mesh_model_del_virtual(struct mesh_net *net, uint32_t va24)
 		unref_virt(virt);
 }
 
-
-static void append_dict_uint16_array(struct l_dbus_message_builder *builder,
-					struct l_queue *q, const char *key)
-{
-	const struct l_queue_entry *entry;
-
-	l_dbus_message_builder_enter_dict(builder, "sv");
-	l_dbus_message_builder_append_basic(builder, 's', key);
-	l_dbus_message_builder_enter_variant(builder, "aq");
-	l_dbus_message_builder_enter_array(builder, "q");
-
-	for (entry = l_queue_get_entries(q); entry; entry = entry->next) {
-		uint16_t value = (uint16_t) L_PTR_TO_UINT(entry->data);
-
-		l_dbus_message_builder_append_basic(builder,'q', &value);
-	}
-
-	l_dbus_message_builder_leave_array(builder);
-	l_dbus_message_builder_leave_variant(builder);
-	l_dbus_message_builder_leave_dict(builder);
-}
-
 void model_build_config(void *model, void *msg_builder)
 {
 	struct l_dbus_message_builder *builder = msg_builder;
@@ -1510,6 +1578,7 @@ void model_build_config(void *model, void *msg_builder)
 		dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
 								&period);
 	}
+
 	/* TODO: add virtual subscriptons */
 
 	l_dbus_message_builder_leave_array(builder);

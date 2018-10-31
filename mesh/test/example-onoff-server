@@ -123,7 +123,9 @@ class PubTimer():
             self._schedule_timer()
 
     def cancel(self):
+        print('Cancel timer')
         if self.thread is not None:
+            print('Cancel thread')
             self.thread.cancel()
             self.thread = None
 
@@ -180,7 +182,6 @@ class Element(dbus.service.Object):
     def set_model_config(self, configs):
         print('Set element models config')
         for config in configs:
-            print(config)
             mod_id = config[0]
             self.UpdateModelConfiguration(mod_id, config[1])
 
@@ -193,10 +194,11 @@ class Element(dbus.service.Object):
             model.process_message(source, key, data)
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
-                                        in_signature="q(sv)", out_signature="")
+                                        in_signature="qa{sv}", out_signature="")
 
     def UpdateModelConfiguration(self, model_id, config):
-        print('UpdateModelConfig')
+        print('UpdateModelConfig ', end='')
+        print(hex(model_id))
         for model in self.models:
             if model_id == model.get_id():
                 model.set_config(config)
@@ -295,6 +297,7 @@ class OnOffServer(Model):
 
     def set_publication(self, period):
         if period == 0:
+            self.pub_period = 0
             self.timer.cancel()
             return
 
