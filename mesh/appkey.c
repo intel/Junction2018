@@ -399,7 +399,7 @@ int appkey_key_add(struct mesh_net *net, uint16_t net_idx, uint16_t app_idx,
 	}
 
 	if (!key) {
-		if (l_queue_length(app_keys) <= MAX_APP_KEYS)
+		if (!(l_queue_length(app_keys) < MAX_APP_KEYS))
 			return MESH_STATUS_INSUFF_RESOURCES;
 
 		key = app_key_new();
