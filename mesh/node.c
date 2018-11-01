@@ -60,8 +60,6 @@ struct node_composition {
 
 struct mesh_node {
 	struct mesh_net *net;
-	struct l_queue *net_keys;
-	struct l_queue *app_keys;
 	struct l_queue *elements;
 	char *app_path;
 	char *owner;
@@ -135,11 +133,6 @@ static bool match_element_path(const void *a, const void *b)
 	return (!strcmp(element->path, path));
 }
 
-static bool match_key_idx(const void *a, const void *b)
-{
-	return (L_PTR_TO_UINT(a) == L_PTR_TO_UINT(b));
-}
-
 struct mesh_node *node_find_by_addr(uint16_t addr)
 {
 	if (!IS_UNICAST(addr))
@@ -196,8 +189,6 @@ static void free_node_resources(void *data)
 {
 	struct mesh_node *node = data;
 
-	l_queue_destroy(node->net_keys, NULL);
-	l_queue_destroy(node->app_keys, NULL);
 	l_queue_destroy(node->elements, element_free);
 	l_free(node->comp);
 	l_free(node->app_path);
@@ -368,38 +359,15 @@ bool node_is_provisioned(struct mesh_node *node)
 	return (!IS_UNASSIGNED(node->primary));
 }
 
-bool node_net_key_delete(struct mesh_node *node, uint16_t idx)
-{
-	if (!node)
-		return false;
-
-	if (!l_queue_find(node->net_keys, match_key_idx, L_UINT_TO_PTR(idx)))
-		return false;
-
-	l_queue_remove(node->net_keys, L_UINT_TO_PTR(idx));
-	/* TODO: remove all associated app keys and bindings */
-	return true;
-}
-
 bool node_app_key_delete(struct mesh_net *net, uint16_t addr,
 				uint16_t net_idx, uint16_t app_idx)
 {
 	struct mesh_node *node;
-	uint32_t index;
 	const struct l_queue_entry *entry;
 
 	node = node_find_by_addr(addr);
 	if (!node)
 		return false;
-
-	index = (net_idx << 16) + app_idx;
-
-	if (!l_queue_find(node->app_keys, match_key_idx, L_UINT_TO_PTR(index)))
-		return false;
-
-	l_queue_remove(node->app_keys, L_UINT_TO_PTR(index));
-
-	storage_local_app_key_del(net, net_idx, app_idx);
 
 	entry = l_queue_get_entries(node->elements);
 	for (; entry; entry = entry->next) {
@@ -407,7 +375,6 @@ bool node_app_key_delete(struct mesh_net *net, uint16_t addr,
 
 		mesh_model_app_key_delete(net, ele->models, app_idx);
 	}
-
 	return true;
 }
 
@@ -461,22 +428,6 @@ const uint8_t *node_get_device_key(struct mesh_node *node)
 uint8_t node_get_num_elements(struct mesh_node *node)
 {
 	return node->num_ele;
-}
-
-struct l_queue *node_get_net_keys(struct mesh_node *node)
-{
-	if (!node)
-		return NULL;
-	else
-		return node->net_keys;
-}
-
-struct l_queue *node_get_app_keys(struct mesh_node *node)
-{
-	if (!node)
-		return NULL;
-	else
-		return node->app_keys;
 }
 
 struct l_queue *node_get_element_models(struct mesh_node *node,

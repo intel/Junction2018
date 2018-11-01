@@ -42,7 +42,6 @@ struct mesh_node *node_find_by_uuid(uint8_t uuid[16]);
 bool node_is_provisioned(struct mesh_node *node);
 bool node_app_key_delete(struct mesh_net *net, uint16_t addr,
 				uint16_t net_idx, uint16_t idx);
-bool node_net_key_delete(struct mesh_node *node, uint16_t index);
 bool node_set_primary(struct mesh_node *node, uint16_t unicast);
 uint16_t node_get_primary(struct mesh_node *node);
 uint16_t node_get_primary_net_idx(struct mesh_node *node);
@@ -52,8 +51,6 @@ void node_set_num_elements(struct mesh_node *node, uint8_t num_ele);
 uint8_t node_get_num_elements(struct mesh_node *node);
 bool node_parse_composition(struct mesh_node *node, uint8_t *buf, uint16_t len,
 								bool local);
-struct l_queue *node_get_net_keys(struct mesh_node *node);
-struct l_queue *node_get_app_keys(struct mesh_node *node);
 bool node_add_binding(struct mesh_node *node, uint8_t ele_idx,
 			uint32_t model_id, uint16_t app_idx);
 bool node_del_binding(struct mesh_node *node, uint8_t ele_idx,
