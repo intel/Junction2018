@@ -161,6 +161,7 @@ static json_object *jarray_string_del(json_object *jarray, char *str,
 		if (str_entry && !strncmp(str, str_entry, len))
 			continue;
 
+		json_object_get(jentry);
 		json_object_array_add(jarray_new, jentry);
 	}
 
@@ -192,9 +193,6 @@ static json_object *jarray_key_del(json_object *jarray, int16_t idx)
 {
 	json_object *jarray_new;
 	int i, sz = json_object_array_length(jarray);
-	char idx_str[5];
-
-	snprintf(idx_str, 5, "%4.4x", idx);
 
 	jarray_new = json_object_new_array();
 	if (!jarray_new)
@@ -202,16 +200,17 @@ static json_object *jarray_key_del(json_object *jarray, int16_t idx)
 
 	for (i = 0; i < sz; ++i) {
 		json_object *jentry, *jvalue;
-		char *str;
 
 		jentry = json_object_array_get_idx(jarray, i);
 
 		if (json_object_object_get_ex(jentry, "index", &jvalue)) {
-			str = (char *)json_object_get_string(jvalue);
-			if (str && !strncmp(str, idx_str, 4))
+			int tmp = json_object_get_int(jvalue);
+
+			if (tmp == idx)
 				continue;
 		}
 
+		json_object_get(jentry);
 		json_object_array_add(jarray_new, jentry);
 	}
 
