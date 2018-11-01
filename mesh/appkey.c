@@ -301,6 +301,7 @@ bool appkey_key_init(struct mesh_net *net, uint16_t net_idx, uint16_t app_idx,
 		return false;
 
 	key->net_idx = net_idx;
+	key->app_idx = app_idx;
 
 	if (key_value && !set_key(key, app_idx, key_value, false))
 		return false;
