@@ -187,7 +187,7 @@ static bool config_pub_set(struct mesh_net *net, uint16_t src, uint16_t dst,
 					cred_flag, ttl, period, retransmit,
 					b_virt, &ota);
 
-	l_info("pub_set: status %d, ea %4.4x, ota: %4.4x, mod: %x, idx: %3.3x",
+	l_debug("pub_set: status %d, ea %4.4x, ota: %4.4x, mod: %x, idx: %3.3x",
 					status, ele_addr, ota, mod_id, idx);
 
 	if (IS_UNASSIGNED(ota) && !b_virt)
@@ -695,8 +695,8 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 
 		/* Only page 0 is currently supported */
 		if (pkt[0] != 0) {
-			l_info("Unsupported page number %d", pkt[0]);
-			l_info("Returning page number 0");
+			l_debug("Unsupported page number %d", pkt[0]);
+			l_debug("Returning page number 0");
 		}
 		long_msg = l_malloc(CFG_MAX_MSG_LEN);
 		n = mesh_model_opcode_set(OP_DEV_COMP_STATUS, long_msg);
@@ -715,7 +715,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		/* Fall Through */
 
 	case OP_CONFIG_DEFAULT_TTL_GET:
-		l_info("Get/Set Default TTL");
+		l_debug("Get/Set Default TTL");
 
 		n = mesh_model_opcode_set(OP_CONFIG_DEFAULT_TTL_STATUS, msg);
 		msg[n++] = node_default_ttl_get(node);
@@ -781,7 +781,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		msg[n++] = node_relay_mode_get(node, &count, &interval);
 		msg[n++] = ((count - 1) << 5) + ((interval/10 - 1) & 0x1f);
 
-		l_info("Get/Set Relay Config (%d)", msg[n-1]);
+		l_debug("Get/Set Relay Config (%d)", msg[n-1]);
 		break;
 
 	case OP_CONFIG_NETWORK_TRANSMIT_SET:
@@ -800,7 +800,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		mesh_net_transmit_params_get(net, &count, &interval);
 		msg[n++] = ((count - 1) << 5) + ((interval/10 - 1) & 0x1f);
 
-		l_info("Get/Set Network Transmit Config");
+		l_debug("Get/Set Network Transmit Config");
 		break;
 
 	case OP_CONFIG_PROXY_SET:
@@ -814,7 +814,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		n = mesh_model_opcode_set(OP_CONFIG_PROXY_STATUS, msg);
 
 		msg[n++] = node_proxy_mode_get(node);
-		l_info("Get/Set Config Proxy (%d)", msg[n-1]);
+		l_debug("Get/Set Config Proxy (%d)", msg[n-1]);
 		break;
 
 	case OP_NODE_IDENTITY_SET:
@@ -849,7 +849,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		n += 2;
 
 		msg[n++] = state;
-		l_info("Get/Set Config Identity (%d)", state);
+		l_debug("Get/Set Config Identity (%d)", state);
 		break;
 
 	case OP_CONFIG_BEACON_SET:
@@ -863,7 +863,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		n = mesh_model_opcode_set(OP_CONFIG_BEACON_STATUS, msg);
 
 		msg[n++] = node_beacon_mode_get(node);
-		l_info("Get/Set Config Beacon (%d)", msg[n-1]);
+		l_debug("Get/Set Config Beacon (%d)", msg[n-1]);
 		break;
 
 	case OP_CONFIG_FRIEND_SET:
@@ -878,7 +878,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		n = mesh_model_opcode_set(OP_CONFIG_FRIEND_STATUS, msg);
 
 		msg[n++] = node_friend_mode_get(node);
-		l_info("Get/Set Friend (%d)", msg[n-1]);
+		l_debug("Get/Set Friend (%d)", msg[n-1]);
 		break;
 
 	case OP_CONFIG_KEY_REFRESH_PHASE_SET:
@@ -912,7 +912,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		n += 2;
 		msg[n++] = phase;
 
-		l_info("Get/Set Key Refresh State (%d)", msg[n-1]);
+		l_debug("Get/Set Key Refresh State (%d)", msg[n-1]);
 		break;
 
 	case OP_APPKEY_ADD:
@@ -925,7 +925,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		b_res = appkey_key_add(net, net_idx, app_idx, pkt + 3,
 						opcode == OP_APPKEY_UPDATE);
 
-		l_info("Add/Update AppKey %s: Net_Idx %3.3x, App_Idx %3.3x",
+		l_debug("Add/Update AppKey %s: Net_Idx %3.3x, App_Idx %3.3x",
 			(b_res == MESH_STATUS_SUCCESS) ? "success" : "fail",
 							net_idx, app_idx);
 
@@ -946,9 +946,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		net_idx = l_get_le16(pkt) & 0xfff;
 		app_idx = l_get_le16(pkt + 1) >> 4;
 		b_res = appkey_key_delete(net, net_idx, app_idx);
-		if (b_res == MESH_STATUS_SUCCESS)
-			node_app_key_delete(net, dst, net_idx, app_idx);
-		l_info("Delete AppKey %s Net_Idx %3.3x to App_Idx %3.3x",
+		l_debug("Delete AppKey %s Net_Idx %3.3x to App_Idx %3.3x",
 			(b_res == MESH_STATUS_SUCCESS) ? "success" : "fail",
 							net_idx, app_idx);
 
@@ -983,7 +981,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		b_res = mesh_net_add_key(net, opcode == OP_NETKEY_UPDATE,
 						l_get_le16(pkt), pkt + 2);
 
-		l_info("NetKey Add/Update %s",
+		l_debug("NetKey Add/Update %s",
 			(b_res == MESH_STATUS_SUCCESS) ? "success" : "fail");
 
 		n = mesh_model_opcode_set(OP_NETKEY_STATUS, msg);
@@ -998,7 +996,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 
 		b_res = mesh_net_del_key(net, l_get_le16(pkt));
 
-		l_info("NetKey delete %s",
+		l_debug("NetKey delete %s",
 			(b_res == MESH_STATUS_SUCCESS) ? "success" : "fail");
 
 		n = mesh_model_opcode_set(OP_NETKEY_STATUS, msg);
@@ -1037,9 +1035,9 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		break;
 
 	case OP_CONFIG_HEARTBEAT_PUB_SET:
-		l_info("OP_CONFIG_HEARTBEAT_PUB_SET");
+		l_debug("OP_CONFIG_HEARTBEAT_PUB_SET");
 		if (size != 9) {
-			l_info("bad size %d", size);
+			l_debug("bad size %d", size);
 			return true;
 		}
 		if (pkt[2] > 0x11 || pkt[3] > 0x10 || pkt[4] > 0x7f)
@@ -1105,7 +1103,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		if (size != 5)
 			return true;
 
-		l_info("Set Sub Period (Log %2.2x) %d sec",
+		l_debug("Set Sub Period (Log %2.2x) %d sec",
 				pkt[4], log_to_uint32(pkt[4], 1));
 
 		b_res = hb_subscription_set(net, l_get_le16(pkt),
@@ -1125,7 +1123,7 @@ static bool cfg_srv_pkt(uint16_t src, uint32_t dst,
 		else
 			time_now.tv_sec = hb->sub_period - time_now.tv_sec;
 
-		l_info("Sub Period (Log %2.2x) %d sec",
+		l_debug("Sub Period (Log %2.2x) %d sec",
 				uint32_to_log(time_now.tv_sec),
 				(int) time_now.tv_sec);
 
