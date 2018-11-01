@@ -191,6 +191,111 @@ static uint32_t convert_pub_period_to_ms(uint8_t pub_period)
 	}
 }
 
+static struct l_dbus_message *create_config_update_msg(struct mesh_node *node,
+					uint8_t ele_idx, uint32_t id,
+					struct l_dbus_message_builder **builder)
+{
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	const char *owner;
+	const char *path;
+	uint16_t model_id;
+
+	owner = node_get_owner(node);
+	path = node_get_element_path(node, ele_idx);
+	if (!path || !owner)
+		return NULL;
+
+	if (id > VENDOR_ID_MASK) {
+		l_debug("Send \"UpdateModelConfiguration\"");
+		message = l_dbus_message_new_method_call(dbus, owner, path,
+						MESH_ELEMENT_INTERFACE,
+						"UpdateModelConfiguration");
+		model_id = (uint16_t) id;
+	} else {
+		l_debug("Send \"UpdateVendorModelConfiguration\"");
+		message = l_dbus_message_new_method_call(dbus, owner, path,
+					MESH_ELEMENT_INTERFACE,
+					"UpdateVendorModelConfiguration");
+	}
+
+	*builder = l_dbus_message_builder_new(message);
+
+	if (id > VENDOR_ID_MASK)
+		l_dbus_message_builder_append_basic(*builder, 'q', &model_id);
+	else
+		l_dbus_message_builder_append_basic(*builder, 'u', &id);
+
+	return message;
+}
+
+static void config_update_model_pub_period(struct mesh_node *node,
+					uint8_t ele_idx, uint32_t model_id,
+					uint32_t period)
+{
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	struct l_dbus_message_builder *builder;
+
+	message = create_config_update_msg(node, ele_idx, model_id, &builder);
+	if (!message)
+		return;
+
+	l_dbus_message_builder_enter_array(builder, "{sv}");
+	dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
+								&period);
+
+	l_dbus_message_builder_leave_array(builder);
+	if (l_dbus_message_builder_finalize(builder))
+				l_dbus_send(dbus, message);
+
+	l_dbus_message_builder_destroy(builder);
+}
+
+static void append_dict_uint16_array(struct l_dbus_message_builder *builder,
+					struct l_queue *q, const char *key)
+{
+	const struct l_queue_entry *entry;
+
+	l_dbus_message_builder_enter_dict(builder, "sv");
+	l_dbus_message_builder_append_basic(builder, 's', key);
+	l_dbus_message_builder_enter_variant(builder, "aq");
+	l_dbus_message_builder_enter_array(builder, "q");
+
+	for (entry = l_queue_get_entries(q); entry; entry = entry->next) {
+		uint16_t value = (uint16_t) L_PTR_TO_UINT(entry->data);
+
+		l_dbus_message_builder_append_basic(builder,'q', &value);
+	}
+
+	l_dbus_message_builder_leave_array(builder);
+	l_dbus_message_builder_leave_variant(builder);
+	l_dbus_message_builder_leave_dict(builder);
+}
+
+static void config_update_model_bindings(struct mesh_node *node,
+							struct mesh_model *mod)
+{
+	struct l_dbus *dbus = dbus_get_bus();
+	struct l_dbus_message *message;
+	struct l_dbus_message_builder *builder;
+
+	message = create_config_update_msg(node, mod->ele_idx, mod->id,
+								&builder);
+	if (!message)
+		return;
+
+	l_dbus_message_builder_enter_array(builder, "{sv}");
+
+	append_dict_uint16_array(builder, mod->bindings, "Bindings");
+
+	l_dbus_message_builder_leave_array(builder);
+	if (l_dbus_message_builder_finalize(builder))
+				l_dbus_send(dbus, message);
+
+	l_dbus_message_builder_destroy(builder);
+}
+
 static void forward_model(void *a, void *b)
 {
 	struct mesh_model *mod = a;
@@ -373,39 +478,82 @@ done:
 	return ret;
 }
 
-static void model_unbind_idx(void *a, void *b)
+static void remove_pub(struct mesh_net *net, struct mesh_model *mod)
 {
-	struct mesh_model *mod = a;
-	uint16_t idx = L_PTR_TO_UINT(b);
+	struct mesh_node *node;
 
-	if (idx == mod->pub->idx) {
-		mod->pub->addr = UNASSIGNED_ADDRESS;
-		/*
-		 * TODO: callback for internal model or
-		 * D-Bus signal/method "model publication changed" (TBD)
-		 */
+	l_free(mod->pub);
+	mod->pub = NULL;
+
+	/* TODO: remove from storage */
+
+	/* Internal models */
+	if (mod->cbs && mod->cbs->pub) {
+		mod->cbs->pub(NULL);
+		return;
 	}
 
-	l_queue_remove(mod->bindings, b);
+	/* External models */
+	node = mesh_net_local_node_get(net);
+	if (!node)
+		return;
 
-	if (mod->cbs && mod->cbs->bind)
-		mod->cbs->bind(idx, ACTION_DELETE);
+	config_update_model_pub_period(node, mod->ele_idx, mod->id, 0);
 }
 
-static int model_bind_idx(struct mesh_model *mod, uint16_t idx)
+static void model_unbind_idx(struct mesh_net *net, struct mesh_model *mod,
+								uint16_t idx)
 {
+	l_queue_remove(mod->bindings, L_UINT_TO_PTR(idx));
+
+	if (mod->cbs) {
+		/* Internal model */
+		if (mod->cbs->bind)
+			mod->cbs->bind(idx, ACTION_DELETE);
+	} else {
+		/* External model */
+		struct mesh_node *node = mesh_net_local_node_get(net);
+
+		if (!node)
+			return;
+
+		config_update_model_bindings(node, mod);
+	}
+
+	if (mod->pub && idx != mod->pub->idx)
+		return;
+
+	/* Remove model publication if the publication key is unbound */
+	remove_pub(net, mod);
+}
+
+static int model_bind_idx(struct mesh_net *net, struct mesh_model *mod,
+								uint16_t idx)
+{
+	struct mesh_node *node;
+
 	if (l_queue_length(mod->bindings) >= MAX_BINDINGS)
 		return MESH_STATUS_INSUFF_RESOURCES;
 
 	if (!l_queue_push_tail(mod->bindings, L_UINT_TO_PTR(idx)))
 		return MESH_STATUS_INSUFF_RESOURCES;
 
-	if (mod->cbs && mod->cbs->bind)
-		mod->cbs->bind(idx, ACTION_ADD);
-
 	l_debug("Add %4.4x to model %8.8x", idx, mod->id);
-	return MESH_STATUS_SUCCESS;
 
+	if (mod->cbs) {
+		/* Internal model */
+		if (mod->cbs->bind)
+			mod->cbs->bind(idx, ACTION_ADD);
+
+		return MESH_STATUS_SUCCESS;
+	}
+
+	/* External model */
+	node = mesh_net_local_node_get(net);
+	if (node)
+		config_update_model_bindings(node, mod);
+
+	return MESH_STATUS_SUCCESS;
 }
 
 static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
@@ -437,7 +585,7 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 		return MESH_STATUS_SUCCESS;
 
 	if (unbind) {
-		model_unbind_idx(mod, &app_idx);
+		model_unbind_idx(net, mod, app_idx);
 
 		if (!storage_model_bind(net, addr, id, app_idx, true))
 			return MESH_STATUS_STORAGE_FAIL;
@@ -445,12 +593,12 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 		return MESH_STATUS_SUCCESS;
 	}
 
-	status = model_bind_idx(mod, app_idx);
+	status = model_bind_idx(net, mod, app_idx);
 	if (status != MESH_STATUS_SUCCESS)
 		return status;
 
 	if (!storage_model_bind(net, addr, id, app_idx, false)) {
-		model_unbind_idx(mod, &app_idx);
+		model_unbind_idx(net, mod, app_idx);
 		return MESH_STATUS_STORAGE_FAIL;
 	}
 
@@ -577,87 +725,6 @@ static int add_sub(struct mesh_net *net, struct mesh_model *mod,
 		mesh_net_dst_reg(net, grp);
 
 	return MESH_STATUS_SUCCESS;
-}
-
-static void append_dict_uint16_array(struct l_dbus_message_builder *builder,
-					struct l_queue *q, const char *key)
-{
-	const struct l_queue_entry *entry;
-
-	l_dbus_message_builder_enter_dict(builder, "sv");
-	l_dbus_message_builder_append_basic(builder, 's', key);
-	l_dbus_message_builder_enter_variant(builder, "aq");
-	l_dbus_message_builder_enter_array(builder, "q");
-
-	for (entry = l_queue_get_entries(q); entry; entry = entry->next) {
-		uint16_t value = (uint16_t) L_PTR_TO_UINT(entry->data);
-
-		l_dbus_message_builder_append_basic(builder,'q', &value);
-	}
-
-	l_dbus_message_builder_leave_array(builder);
-	l_dbus_message_builder_leave_variant(builder);
-	l_dbus_message_builder_leave_dict(builder);
-}
-
-static struct l_dbus_message *create_config_update_msg(struct mesh_node *node,
-					uint8_t ele_idx, uint32_t id,
-					struct l_dbus_message_builder **builder)
-{
-	struct l_dbus *dbus = dbus_get_bus();
-	struct l_dbus_message *message;
-	const char *owner;
-	const char *path;
-	uint16_t model_id;
-
-	owner = node_get_owner(node);
-	path = node_get_element_path(node, ele_idx);
-	if (!path || !owner)
-		return NULL;
-
-	if (id > VENDOR_ID_MASK) {
-		l_debug("Send \"UpdateModelConfiguration\"");
-		message = l_dbus_message_new_method_call(dbus, owner, path,
-						MESH_ELEMENT_INTERFACE,
-						"UpdateModelConfiguration");
-		model_id = (uint16_t) id;
-	} else {
-		l_debug("Send \"UpdateVendorModelConfiguration\"");
-		message = l_dbus_message_new_method_call(dbus, owner, path,
-					MESH_ELEMENT_INTERFACE,
-					"UpdateVendorModelConfiguration");
-	}
-
-	*builder = l_dbus_message_builder_new(message);
-
-	if (id > VENDOR_ID_MASK)
-		l_dbus_message_builder_append_basic(*builder, 'q', &model_id);
-	else
-		l_dbus_message_builder_append_basic(*builder, 'u', &id);
-
-	return message;
-}
-
-static void update_model_pub_period(struct mesh_node *node, uint8_t ele_idx,
-					uint32_t model_id, uint32_t period)
-{
-	struct l_dbus *dbus = dbus_get_bus();
-	struct l_dbus_message *message;
-	struct l_dbus_message_builder *builder;
-
-	message = create_config_update_msg(node, ele_idx, model_id, &builder);
-	if (!message)
-		return;
-
-	l_dbus_message_builder_enter_array(builder, "{sv}");
-	dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
-								&period);
-
-	l_dbus_message_builder_leave_array(builder);
-	if (l_dbus_message_builder_finalize(builder))
-				l_dbus_send(dbus, message);
-
-	l_dbus_message_builder_destroy(builder);
 }
 
 static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
@@ -994,18 +1061,21 @@ int mesh_model_pub_set(struct mesh_net *net, uint16_t addr, uint32_t id,
 
 	/* TODO: save to storage */
 
-	/* TODO: If internal model, call registered callbacks */
-	if (mod->cbs)
-		return MESH_STATUS_SUCCESS;
-
 	/*
 	 * If the publication address is set to unassigned address value,
-	 * send zero value as publication period
+	 * remove publication
 	 */
 	if (IS_UNASSIGNED(*dst))
-		period = 0;
+		remove_pub(net, mod);
 
-	update_model_pub_period(node, ele_idx, id,
+	/* Internal model, call registered callbacks */
+	if (mod->cbs && mod->cbs->pub) {
+		mod->cbs->pub(mod->pub);
+		return MESH_STATUS_SUCCESS;
+	}
+
+	/* External model */
+	config_update_model_pub_period(node, ele_idx, id,
 					convert_pub_period_to_ms(period));
 
 	return MESH_STATUS_SUCCESS;
@@ -1119,7 +1189,13 @@ bool mesh_model_register(struct mesh_net *net, uint8_t ele_idx,
 void mesh_model_app_key_delete(struct mesh_net *net, struct l_queue *models,
 							uint16_t app_idx)
 {
-	l_queue_foreach(models, model_unbind_idx, L_UINT_TO_PTR(app_idx));
+	const struct l_queue_entry *entry = l_queue_get_entries(models);
+	l_debug("");
+	for (; entry; entry = entry->next) {
+		struct mesh_model *model = entry->data;;
+
+		model_unbind_idx(net, model, app_idx);
+	}
 }
 
 int mesh_model_binding_del(struct mesh_net *net, uint16_t addr, uint32_t id,
@@ -1387,7 +1463,7 @@ struct mesh_model *mesh_model_init(struct mesh_net *net, uint8_t ele_idx,
 		mod->bindings = l_queue_new();
 		for (i = 0; i < db_mod->num_bindings; i++) {
 			l_debug("num_bindings %d", db_mod->num_bindings);
-			if (model_bind_idx(mod, db_mod->bindings[i]) !=
+			if (model_bind_idx(net, mod, db_mod->bindings[i]) !=
 						MESH_STATUS_SUCCESS) {
 				mesh_model_free(mod);
 				return NULL;
