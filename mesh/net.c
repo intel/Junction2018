@@ -3869,13 +3869,12 @@ bool mesh_net_cfg_file_set(struct mesh_net *net, const char *cfg)
 	return true;
 }
 
-bool mesh_net_cfg_file_get(struct mesh_net *net, const char **cfg)
+const char * mesh_net_cfg_file_get(struct mesh_net *net)
 {
 	if (!net)
-		return false;
+		return NULL;
 
-	*cfg = net->cfg_file;
-	return true;
+	return net->cfg_file;
 }
 
 bool mesh_net_is_local_address(struct mesh_net *net, uint16_t addr)

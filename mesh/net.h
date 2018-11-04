@@ -371,7 +371,7 @@ bool mesh_net_have_key(struct mesh_net *net, uint16_t net_idx);
 bool mesh_net_jconfig_set(struct mesh_net *net, void *jconfig);
 void *mesh_net_jconfig_get(struct mesh_net *net);
 bool mesh_net_cfg_file_set(struct mesh_net *net, const char *cfg);
-bool mesh_net_cfg_file_get(struct mesh_net *net, const char **cfg);
+const char *mesh_net_cfg_file_get(struct mesh_net *net);
 bool mesh_net_is_local_address(struct mesh_net *net, uint16_t addr);
 void mesh_net_set_window_accuracy(struct mesh_net *net, uint8_t accuracy);
 void mesh_net_transmit_params_set(struct mesh_net *net, uint8_t count,

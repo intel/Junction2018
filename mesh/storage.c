@@ -72,7 +72,7 @@ static bool read_local_node_cb(struct mesh_db_node *db_node, void *user_data)
 		return false;
 
 	if (!node_init_from_storage(node, net, db_node, true)) {
-		node_cleanup(node);
+		node_free(node);
 		return false;
 	}
 
@@ -451,8 +451,8 @@ bool storage_local_write_sequence_number(struct mesh_net *net, uint32_t seq)
 	if (!result)
 		return false;
 
-	result = mesh_net_cfg_file_get(net, &cfg_file);
-	if (result && cfg_file)
+	cfg_file = mesh_net_cfg_file_get(net);
+	if (cfg_file)
 		result = storage_save_config(net, cfg_file, false, NULL, NULL);
 
 	return result;

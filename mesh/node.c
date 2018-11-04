@@ -209,6 +209,7 @@ void node_free(struct mesh_node *node)
 {
 	if (!node)
 		return;
+
 	l_queue_remove(nodes, node);
 	free_node_resources(node);
 }
@@ -330,9 +331,9 @@ void node_cleanup(void *data)
 	struct mesh_net *net = node->net;
 	const char *cfg_filename;
 
+	cfg_filename = mesh_net_cfg_file_get(net);
 	/* Save local node configuration */
-	if (net) {
-		mesh_net_cfg_file_get(net, &cfg_filename);
+	if (cfg_filename) {
 
 		/* Preserve the last sequence number */
 		storage_local_write_sequence_number(net,
