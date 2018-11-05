@@ -206,25 +206,23 @@ static struct l_dbus_message *create_config_update_msg(struct mesh_node *node,
 	if (!path || !owner)
 		return NULL;
 
-	if (id > VENDOR_ID_MASK) {
-		l_debug("Send \"UpdateModelConfiguration\"");
-		message = l_dbus_message_new_method_call(dbus, owner, path,
+	l_debug("Send \"UpdateModelConfiguration\"");
+	message = l_dbus_message_new_method_call(dbus, owner, path,
 						MESH_ELEMENT_INTERFACE,
 						"UpdateModelConfiguration");
-		model_id = (uint16_t) id;
-	} else {
-		l_debug("Send \"UpdateVendorModelConfiguration\"");
-		message = l_dbus_message_new_method_call(dbus, owner, path,
-					MESH_ELEMENT_INTERFACE,
-					"UpdateVendorModelConfiguration");
-	}
 
 	*builder = l_dbus_message_builder_new(message);
 
-	if (id > VENDOR_ID_MASK)
-		l_dbus_message_builder_append_basic(*builder, 'q', &model_id);
-	else
-		l_dbus_message_builder_append_basic(*builder, 'u', &id);
+	model_id = (uint16_t) id;
+
+	l_dbus_message_builder_append_basic(*builder, 'q', &model_id);
+
+	l_dbus_message_builder_enter_array(*builder, "{sv}");
+
+	if ((id & VENDOR_ID_MASK) != VENDOR_ID_MASK) {
+		uint16_t vendor = id >> 16;
+		dbus_append_dict_entry_basic(*builder, "Vendor", "q", &vendor);
+	}
 
 	return message;
 }
@@ -241,7 +239,6 @@ static void config_update_model_pub_period(struct mesh_node *node,
 	if (!message)
 		return;
 
-	l_dbus_message_builder_enter_array(builder, "{sv}");
 	dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
 								&period);
 
@@ -284,8 +281,6 @@ static void config_update_model_bindings(struct mesh_node *node,
 								&builder);
 	if (!message)
 		return;
-
-	l_dbus_message_builder_enter_array(builder, "{sv}");
 
 	append_dict_uint16_array(builder, mod->bindings, "Bindings");
 
@@ -727,7 +722,7 @@ static int add_sub(struct mesh_net *net, struct mesh_model *mod,
 	return MESH_STATUS_SUCCESS;
 }
 
-static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
+static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, bool is_sub,
 					uint16_t src, uint16_t key_idx,
 					uint16_t size, const uint8_t *data)
 {
@@ -737,25 +732,25 @@ static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
 	const char *owner;
 	const char *path;
 
-	l_debug("Send \"MessageReceived\"");
-
 	owner = node_get_owner(node);
 	path = node_get_element_path(node, ele_idx);
 	if (!path || !owner)
 		return;
+
+	l_debug("Send \"MessageReceived\"");
 
 	message = l_dbus_message_new_method_call(dbus, owner, path,
 				MESH_ELEMENT_INTERFACE, "MessageReceived");
 
 	builder = l_dbus_message_builder_new(message);
 
-	if (!l_dbus_message_builder_append_basic(builder, 'q', &dst))
-		goto error;
-
 	if (!l_dbus_message_builder_append_basic(builder, 'q', &src))
 		goto error;
 
 	if (!l_dbus_message_builder_append_basic(builder, 'q', &key_idx))
+		goto error;
+
+	if (!l_dbus_message_builder_append_basic(builder, 'b', &is_sub))
 		goto error;
 
 	if (!dbus_append_byte_array(builder, data, size))
@@ -768,13 +763,6 @@ static void send_msg_rcvd(struct mesh_node *node, uint8_t ele_idx, uint16_t dst,
 
 error:
 	l_dbus_message_builder_destroy(builder);
-}
-
-/*TODO */
-static void send_virt_msg_rcvd(struct mesh_node *node, uint8_t ele_idx,
-			uint8_t virt[16], uint16_t src, uint16_t key_idx,
-			uint16_t size, const uint8_t *data)
-{
 }
 
 bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
@@ -798,6 +786,7 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 	uint16_t addr;
 	struct mesh_virtual *decrypt_virt = NULL;
 	bool result = false;
+	bool is_subscription;
 
 	l_debug("iv_index %8.8x key_id = %2.2x", iv_index, key_id);
 	if (!dst)
@@ -866,30 +855,30 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 	if (!num_ele || IS_UNASSIGNED(addr))
 		goto done;
 
+	is_subscription = !(IS_UNICAST(dst));
+
 	for (i = 0; i < num_ele; i++) {
 		struct l_queue *models;
 
-		if (dst < 0x8000 && ele_idx != i)
+		if (!is_subscription && ele_idx != i)
 			continue;
 
 		forward.unicast = addr + i;
 		forward.has_dst = false;
 
 		models = node_get_element_models(node, i, NULL);
+
+		/* Internal models */
 		l_queue_foreach(models, forward_model, &forward);
 
-		/* The message has not been handled by internal models */
-		if (forward.has_dst && !forward.done) {
-			if (!forward.virt)
-				send_msg_rcvd(node, i, dst, src,
+		/*
+		 * Cycle through external models if the message has not been
+		 * handled by internal models
+		 */
+		if (forward.has_dst && !forward.done)
+			send_msg_rcvd(node, i, is_subscription, src,
 					forward.idx, forward.size,
 					forward.data);
-			else
-				send_virt_msg_rcvd(node, i,
-						forward.virt->addr, src,
-						forward.idx, forward.size,
-						forward.data);
-		}
 
 		/*
 		 * Either the message has been processed internally or
@@ -898,7 +887,7 @@ bool mesh_model_rx(struct mesh_net *net, bool szmict, uint32_t seq0,
 		result = forward.has_dst | forward.done;
 
 		/* If the message was to unicast address, we are done */
-		if (dst < 0x8000 && ele_idx == i)
+		if (!is_subscription && ele_idx == i)
 			break;
 	}
 
@@ -1643,19 +1632,12 @@ void model_build_config(void *model, void *msg_builder)
 	if (l_queue_length(mod->bindings))
 		append_dict_uint16_array(builder, mod->bindings, "Bindings");
 
-	/* Model subscriptions, if present */
-	if (l_queue_length(mod->subs))
-		append_dict_uint16_array(builder, mod->bindings,
-							"Subscriptions");
-
 	/* Model periodic publication interval, if present */
 	if (mod->pub) {
 		uint32_t period = convert_pub_period_to_ms(mod->pub->period);
 		dbus_append_dict_entry_basic(builder, "PublicationPeriod", "u",
 								&period);
 	}
-
-	/* TODO: add virtual subscriptons */
 
 	l_dbus_message_builder_leave_array(builder);
 	l_dbus_message_builder_leave_struct(builder);

@@ -18,8 +18,8 @@
  *
  */
 
-#define BLUEZ_MESH_PATH "/org/bluez/mesh"
-#define BLUEZ_MESH_SERVICE "org.bluez.mesh"
+#define BLUEZ_MESH_PATH "/org/bluez/mesh1"
+#define BLUEZ_MESH_SERVICE "org.bluez.mesh1"
 
 bool dbus_init(struct l_dbus *dbus);
 struct l_dbus *dbus_get_bus(void);

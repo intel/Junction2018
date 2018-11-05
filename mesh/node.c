@@ -1306,7 +1306,8 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 	const char *sender, *ele_path;
 	struct l_dbus_message_iter iter_data;
 	uint16_t src;
-	uint32_t mod_id;
+	uint16_t model_id, vendor;
+	uint32_t vendor_mod_id;
 	struct node_element *ele;
 	uint8_t data[MESH_MAX_ACCESS_PAYLOAD];
 	uint32_t len;
@@ -1320,8 +1321,8 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 	if (strcmp(sender, node->owner))
 		return dbus_error(message, MESH_ERROR_NOT_AUTHORIZED, NULL);
 
-	if (!l_dbus_message_get_arguments(message, "ouay", &ele_path, &mod_id,
-								&iter_data))
+	if (!l_dbus_message_get_arguments(message, "oqqay", &ele_path, &vendor,
+							&model_id, &iter_data))
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS, NULL);
 
 	ele = l_queue_find(node->elements, match_element_path, ele_path);
@@ -1336,7 +1337,8 @@ static struct l_dbus_message *vendor_publish_call(struct l_dbus *dbus,
 		return dbus_error(message, MESH_ERROR_INVALID_ARGS,
 						"Mesh message is empty");
 
-	result = mesh_model_publish(node->net, mod_id, src,
+	vendor_mod_id = (vendor << 16) | model_id;
+	result = mesh_model_publish(node->net, vendor_mod_id, src,
 				mesh_net_get_default_ttl(node->net), data, len);
 
 	if (result != MESH_ERROR_NONE)
@@ -1354,10 +1356,10 @@ static void setup_node_interface(struct l_dbus_interface *iface)
 						"element_path", "destination",
 						"key", "data");
 	l_dbus_interface_method(iface, "Publish", 0, publish_call, "", "oqay",
-					"element_path", "model", "data");
+					"element_path", "model_id", "data");
 	l_dbus_interface_method(iface, "VendorPublish", 0, vendor_publish_call,
-						"", "ouay", "element_path",
-						"model", "data");
+						"", "oqqay", "element_path",
+						"vendor", "model_id", "data");
 
 	/*TODO: Properties */
 }
