@@ -17,9 +17,9 @@ MESH_SERVICE_NAME = 'org.bluez.mesh'
 DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
 DBUS_OM_IFACE = 'org.freedesktop.DBus.ObjectManager'
 
-MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
-MESH_NODE_IFACE = 'org.bluez.mesh.Node'
-MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element'
+MESH_NETWORK_IFACE = 'org.bluez.mesh.Network1'
+MESH_NODE_IFACE = 'org.bluez.mesh.Node1'
+MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element1'
 
 VENDOR_ID_NONE = 0xffff
 
@@ -139,8 +139,8 @@ class Element(dbus.service.Object):
         print('Set element models config')
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
-                                        in_signature="qqqay", out_signature="")
-    def MessageReceived(self, dest, source, key, data):
+                                        in_signature="qqbay", out_signature="")
+    def MessageReceived(self, source, key, is_sub, data):
         print('Message Received on Element ', end='')
         print(self.index)
         for model in self.models:
@@ -169,9 +169,6 @@ class Model():
 
     def set_bindings(self, bindings):
         self.bindings = bindings
-
-    def set_subscriptions(self, subs):
-        self.subs = subs
 
 class OnOffClient(Model):
     def __init__(self, model_id):
