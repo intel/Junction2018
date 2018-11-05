@@ -1432,7 +1432,7 @@ int mesh_model_sub_del_all(struct mesh_net *net, uint16_t addr, uint32_t id)
 	return fail;
 }
 
-struct mesh_model *mesh_model_init(struct mesh_net *net, uint8_t ele_idx,
+struct mesh_model *mesh_model_setup(struct mesh_net *net, uint8_t ele_idx,
 						struct mesh_db_model *db_mod)
 {
 	struct mesh_model *mod;
@@ -1659,4 +1659,14 @@ void model_build_config(void *model, void *msg_builder)
 
 	l_dbus_message_builder_leave_array(builder);
 	l_dbus_message_builder_leave_struct(builder);
+}
+
+void mesh_model_init(void)
+{
+	mesh_virtuals = l_queue_new();
+}
+
+void mesh_model_cleanup(void)
+{
+	l_queue_destroy(mesh_virtuals, l_free);
 }

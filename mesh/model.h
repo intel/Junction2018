@@ -97,7 +97,7 @@ int mesh_model_pub_set(struct mesh_net *net, uint16_t addr, uint32_t id,
 			const uint8_t *mod_addr, uint16_t idx, bool cred_flag,
 			uint8_t ttl, uint8_t period, uint8_t retransmit,
 			bool b_virt, uint16_t *dst);
-struct mesh_model *mesh_model_init(struct mesh_net *net, uint8_t ele_idx,
+struct mesh_model *mesh_model_setup(struct mesh_net *net, uint8_t ele_idx,
 						struct mesh_db_model *db_mod);
 
 int mesh_model_binding_add(struct mesh_net *net, uint16_t addr, uint32_t id,
@@ -142,3 +142,5 @@ uint16_t mesh_model_opcode_set(uint32_t opcode, uint8_t *buf);
 bool mesh_model_opcode_get(const uint8_t *buf, uint16_t size,
 					uint32_t *opcode, uint16_t *n);
 void model_build_config(void *model, void *msg_builder);
+void mesh_model_init(void);
+void mesh_model_cleanup(void);

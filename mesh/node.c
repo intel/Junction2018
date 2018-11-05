@@ -230,7 +230,7 @@ static bool add_models(struct mesh_net *net, struct node_element *ele,
 		struct mesh_db_model *db_mod;
 
 		db_mod = entry->data;
-		mod = mesh_model_init(net, ele->idx, db_mod);
+		mod = mesh_model_setup(net, ele->idx, db_mod);
 		if (!mod)
 			return false;
 

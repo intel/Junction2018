@@ -261,6 +261,8 @@ bool mesh_init(uint16_t index, const char *config_dir)
 
 	mesh.req_index = index;
 
+	mesh_model_init();
+
 	if (!config_dir)
 		config_dir = MESH_STORAGEDIR;
 
@@ -308,6 +310,7 @@ void mesh_cleanup(void)
 
 	l_queue_destroy(attach_queue, attach_exit);
 	node_cleanup_all();
+	mesh_model_cleanup();
 
 	l_queue_destroy(controllers, NULL);
 	l_dbus_object_remove_interface(dbus_get_bus(), BLUEZ_MESH_PATH,
