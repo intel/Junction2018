@@ -527,16 +527,12 @@ static void model_unbind_idx(struct mesh_net *net, struct mesh_model *mod,
 	remove_pub(net, mod);
 }
 
-static int model_bind_idx(struct mesh_net *net, struct mesh_model *mod,
+static void model_bind_idx(struct mesh_net *net, struct mesh_model *mod,
 								uint16_t idx)
 {
 	struct mesh_node *node;
 
-	if (l_queue_length(mod->bindings) >= MAX_BINDINGS)
-		return MESH_STATUS_INSUFF_RESOURCES;
-
-	if (!l_queue_push_tail(mod->bindings, L_UINT_TO_PTR(idx)))
-		return MESH_STATUS_INSUFF_RESOURCES;
+	l_queue_push_tail(mod->bindings, L_UINT_TO_PTR(idx));
 
 	l_debug("Add %4.4x to model %8.8x", idx, mod->id);
 
@@ -544,16 +540,13 @@ static int model_bind_idx(struct mesh_net *net, struct mesh_model *mod,
 		/* Internal model */
 		if (mod->cbs->bind)
 			mod->cbs->bind(idx, ACTION_ADD);
-
-		return MESH_STATUS_SUCCESS;
+		return;
 	}
 
 	/* External model */
 	node = mesh_net_local_node_get(net);
 	if (node)
 		config_update_model_bindings(node, mod);
-
-	return MESH_STATUS_SUCCESS;
 }
 
 static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
@@ -561,7 +554,6 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 {
 	int fail;
 	struct mesh_model *mod;
-	int status;
 	bool is_present;
 
 	mod = find_model(net, addr, id, &fail);
@@ -569,6 +561,8 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 		l_info("model not found");
 		return fail;
 	}
+
+	id = (id >= VENDOR_ID_MASK) ? (id & 0xffff) : id;
 
 	if (id == CONFIG_SRV_MODEL || id == CONFIG_CLI_MODEL)
 		return MESH_STATUS_INVALID_MODEL;
@@ -593,14 +587,13 @@ static int update_binding(struct mesh_net *net, uint16_t addr, uint32_t id,
 		return MESH_STATUS_SUCCESS;
 	}
 
-	status = model_bind_idx(net, mod, app_idx);
-	if (status != MESH_STATUS_SUCCESS)
-		return status;
+	if (l_queue_length(mod->bindings) >= MAX_BINDINGS)
+		return MESH_STATUS_INSUFF_RESOURCES;
 
-	if (!storage_model_bind(net, addr, id, app_idx, false)) {
-		model_unbind_idx(net, mod, app_idx);
+	if (!storage_model_bind(net, addr, id, app_idx, false))
 		return MESH_STATUS_STORAGE_FAIL;
-	}
+
+	model_bind_idx(net, mod, app_idx);
 
 	return MESH_STATUS_SUCCESS;
 
@@ -1433,6 +1426,12 @@ struct mesh_model *mesh_model_setup(struct mesh_net *net, uint8_t ele_idx,
 	uint32_t i;
 
 	l_debug("mod id %4.4x", db_mod->id);
+	if (db_mod->num_bindings > MAX_BINDINGS) {
+		l_warn("Binding list too long %u (max %u)",
+		       db_mod->num_bindings, MAX_BINDINGS);
+		return NULL;
+	}
+
 	mod = mesh_model_new(ele_idx, db_mod->id, db_mod->vendor);
 	if (!mod)
 		return NULL;
@@ -1455,14 +1454,8 @@ struct mesh_model *mesh_model_setup(struct mesh_net *net, uint8_t ele_idx,
 	/* Add application key bindings if present */
 	if (db_mod->bindings) {
 		mod->bindings = l_queue_new();
-		for (i = 0; i < db_mod->num_bindings; i++) {
-			l_debug("num_bindings %d", db_mod->num_bindings);
-			if (model_bind_idx(net, mod, db_mod->bindings[i]) !=
-						MESH_STATUS_SUCCESS) {
-				mesh_model_free(mod);
-				return NULL;
-			}
-		}
+		for (i = 0; i < db_mod->num_bindings; i++)
+			model_bind_idx(net, mod, db_mod->bindings[i]);
 	}
 
 	/* Add publication if present */
