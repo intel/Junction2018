@@ -18,9 +18,12 @@
  *
  */
 
-#define MESH_NETWORK_INTERFACE "org.bluez.mesh.Network"
-#define MESH_NODE_INTERFACE "org.bluez.mesh.Node"
-#define MESH_ELEMENT_INTERFACE "org.bluez.mesh.Element"
+#define BLUEZ_MESH_NAME "org.bluez.mesh1"
+
+#define MESH_NETWORK_INTERFACE "org.bluez.mesh1.Network"
+#define MESH_NODE_INTERFACE "org.bluez.mesh1.Node"
+#define MESH_ELEMENT_INTERFACE "org.bluez.mesh1.Element"
+#define ERROR_INTERFACE "org.bluez.mesh1.Error"
 
 bool mesh_init(uint16_t index, const char *in_config_name);
 void mesh_cleanup(void);

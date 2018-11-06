@@ -41,8 +41,6 @@
 #include "mesh/error.h"
 #include "mesh/dbus.h"
 
-#define ERROR_INTERFACE "org.bluez.mesh.Error"
-
 struct l_dbus *dbus;
 
 struct error_entry {

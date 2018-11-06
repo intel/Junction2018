@@ -13,13 +13,13 @@ except ImportError:
   import gobject as GObject
 from dbus.mainloop.glib import DBusGMainLoop
 
-MESH_SERVICE_NAME = 'org.bluez.mesh'
+MESH_SERVICE_NAME = 'org.bluez.mesh1'
 DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
 DBUS_OM_IFACE = 'org.freedesktop.DBus.ObjectManager'
 
-MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
-MESH_NODE_IFACE = 'org.bluez.mesh.Node'
-MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element'
+MESH_NETWORK_IFACE = 'org.bluez.mesh1.Network'
+MESH_NODE_IFACE = 'org.bluez.mesh1.Node'
+MESH_ELEMENT_IFACE = 'org.bluez.mesh1.Element'
 
 VENDOR_ID_NONE = 0xffff
 
@@ -139,12 +139,23 @@ class Element(dbus.service.Object):
         print('Set element models config')
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
-                                        in_signature="qqqay", out_signature="")
-    def MessageReceived(self, dest, source, key, data):
+                                        in_signature="qqbay", out_signature="")
+    def MessageReceived(self, source, key, is_sub, data):
         print('Message Received on Element ', end='')
         print(self.index)
         for model in self.models:
             model.process_message(source, key, data)
+
+    @dbus.service.method(MESH_ELEMENT_IFACE,
+                                        in_signature="qa{sv}", out_signature="")
+
+    def UpdateModelConfiguration(self, model_id, config):
+        print('UpdateModelConfig ', end='')
+        print(hex(model_id))
+        for model in self.models:
+            if model_id == model.get_id():
+                model.set_config(config)
+                return
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
                                         in_signature="", out_signature="")
@@ -161,6 +172,9 @@ class Model():
     def set_path(self, path):
         self.path = path
 
+    def get_id(self):
+        return self.model_id
+
     def process_message(self, source, key, data):
         print('Model process message')
 
@@ -170,8 +184,16 @@ class Model():
     def set_bindings(self, bindings):
         self.bindings = bindings
 
-    def set_subscriptions(self, subs):
-        self.subs = subs
+    def set_config(self, config):
+        if 'Bindings' in config:
+            self.bindings = config.get('Bindings')
+            print('Bindings: ', end='')
+            print(self.bindings)
+        if 'PublicationPeriod' in config:
+            self.set_publication(config.get('PublicationPeriod'))
+            print('Model publication period ', end='')
+            print(self.pub_period, end='')
+            print(' ms')
 
 class OnOffClient(Model):
     def __init__(self, model_id):
@@ -198,10 +220,10 @@ class OnOffClient(Model):
     def set_state(self, dest, key, state):
         opcode = 0x8202
         data = struct.pack('<HB', opcode, state)
-        self.send_message(dest, key, data, self._reply_cb)
+        self._send_message(dest, key, data, self._reply_cb)
 
     def process_message(self, source, key, data):
-        print('OnOfServer process message len ', end = '')
+        print('OnOffClient process message len ', end = '')
         datalen = len(data)
         print(datalen)
 
@@ -231,7 +253,7 @@ def main():
     global app
 
     mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME,
-                                             "/org/bluez/mesh"),
+                                             "/org/bluez/mesh1"),
                                              MESH_NETWORK_IFACE)
     mesh_net.connect_to_signal('InterfacesRemoved', interfaces_removed_cb)
 

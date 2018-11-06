@@ -40,8 +40,6 @@
 #include "mesh/dbus.h"
 #include "mesh/storage.h"
 
-#define BLUEZ_MESH_NAME "org.bluez.mesh"
-
 static const struct option main_options[] = {
 	{ "index",	required_argument,	NULL, 'i' },
 	{ "config",	optional_argument,	NULL, 'c' },

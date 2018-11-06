@@ -17,13 +17,13 @@ except ImportError:
   import gobject as GObject
 from dbus.mainloop.glib import DBusGMainLoop
 
-MESH_SERVICE_NAME = 'org.bluez.mesh'
+MESH_SERVICE_NAME = 'org.bluez.mesh1'
 DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
 DBUS_OM_IFACE = 'org.freedesktop.DBus.ObjectManager'
 
-MESH_NETWORK_IFACE = 'org.bluez.mesh.Network'
-MESH_NODE_IFACE = 'org.bluez.mesh.Node'
-MESH_ELEMENT_IFACE = 'org.bluez.mesh.Element'
+MESH_NETWORK_IFACE = 'org.bluez.mesh1.Network'
+MESH_NODE_IFACE = 'org.bluez.mesh1.Node'
+MESH_ELEMENT_IFACE = 'org.bluez.mesh1.Element'
 
 VENDOR_ID_NONE = 0xffff
 
@@ -186,8 +186,8 @@ class Element(dbus.service.Object):
             self.UpdateModelConfiguration(mod_id, config[1])
 
     @dbus.service.method(MESH_ELEMENT_IFACE,
-                                        in_signature="qqqay", out_signature="")
-    def MessageReceived(self, dest, source, key, data):
+                                        in_signature="qqbay", out_signature="")
+    def MessageReceived(self, source, key, is_sub, data):
         print('Message Received on Element ', end='')
         print(self.index)
         for model in self.models:
@@ -216,8 +216,6 @@ class Model():
         self.model_id = model_id
         self.vendor = VENDOR_ID_NONE
         self.bindings = []
-        self.subs = []
-        self.virt_subs = []
         self.pub_period = 0
         self.pub_id = 0
         self.path = None
@@ -239,14 +237,6 @@ class Model():
             self.bindings = config.get('Bindings')
             print('Bindings: ', end='')
             print(self.bindings)
-        if 'Subscriptions' in config:
-            self.subs = config.get('Subscriptions')
-            print('Subscriptions: ', end='')
-            print(self.subs)
-        if 'VirtualSubscriptions' in config:
-            self.virt_subs = config.get('VirtualSubscriptions')
-            print('Virtual Subscriptions: ', end='')
-            print(self.virt_subs)
         if 'PublicationPeriod' in config:
             self.set_publication(config.get('PublicationPeriod'))
             print('Model publication period ', end='')
@@ -322,7 +312,7 @@ def main():
     global app
 
     mesh_net = dbus.Interface(bus.get_object(MESH_SERVICE_NAME,
-                                             "/org/bluez/mesh"),
+                                             "/org/bluez/mesh1"),
                                              MESH_NETWORK_IFACE)
     mesh_net.connect_to_signal('InterfacesRemoved', interfaces_removed_cb)
 
