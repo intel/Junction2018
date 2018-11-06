@@ -308,6 +308,11 @@ static void forward_model(void *a, void *b)
 		fwd->has_dst = true;
 	else if (fwd->virt) {
 		virt = l_queue_find(mod->virtuals, simple_match, fwd->virt);
+
+		/* Check that this is not own publication */
+		if (mod->pub && virt->id == mod->pub->addr)
+			return;
+
 		if (virt) {
 			/*
 			 * Map Virtual addresses to a usable namespace that
