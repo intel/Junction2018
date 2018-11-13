@@ -177,6 +177,115 @@ static void event_callback(const void *buf, uint8_t size, void *user_data)
 	}
 }
 
+static void local_commands_callback(const void *data, uint8_t size,
+							void *user_data)
+{
+	const struct bt_hci_rsp_read_local_commands *rsp = data;
+
+	if (rsp->status)
+		l_error("Failed to read local commands");
+}
+
+static void local_features_callback(const void *data, uint8_t size,
+							void *user_data)
+{
+	const struct bt_hci_rsp_read_local_features *rsp = data;
+
+	if (rsp->status)
+		l_error("Failed to read local features");
+}
+
+static void hci_generic_callback(const void *data, uint8_t size,
+								void *user_data)
+{
+	uint8_t status = l_get_u8(data);
+
+	if (status)
+		l_error("Failed to initialize HCI");
+}
+
+static void configure_hci(struct mesh_io_private *io)
+{
+	struct bt_hci_cmd_le_set_scan_parameters cmd;
+	struct bt_hci_cmd_set_event_mask cmd_sem;
+	struct bt_hci_cmd_le_set_event_mask cmd_slem;
+
+	/* Set scan parameters */
+	cmd.type = 0x00; /* Passive Scanning. No scanning PDUs shall be sent */
+	cmd.interval = 0x0030; /* Scan Interval = N * 0.625ms */
+	cmd.window = 0x0030; /* Scan Window = N * 0.625ms */
+	cmd.own_addr_type = 0x00; /* Public Device Address */
+	/* Accept all advertising packets except directed advertising packets
+	 * not addressed to this device (default). */
+	cmd.filter_policy = 0x00;
+
+	/* Set event mask
+	 *
+	 * Mask: 0x2000800002008890
+	 *   Disconnection Complete
+	 *   Encryption Change
+	 *   Read Remote Version Information Complete
+	 *   Hardware Error
+	 *   Data Buffer Overflow
+	 *   Encryption Key Refresh Complete
+	 *   LE Meta
+	 */
+	cmd_sem.mask[0] = 0x90;
+	cmd_sem.mask[1] = 0x88;
+	cmd_sem.mask[2] = 0x00;
+	cmd_sem.mask[3] = 0x02;
+	cmd_sem.mask[4] = 0x00;
+	cmd_sem.mask[5] = 0x80;
+	cmd_sem.mask[6] = 0x00;
+	cmd_sem.mask[7] = 0x20;
+
+	/* Set LE event mask
+	 *
+	 * Mask: 0x000000000000087f
+	 *   LE Connection Complete
+	 *   LE Advertising Report
+	 *   LE Connection Update Complete
+	 *   LE Read Remote Used Features Complete
+	 *   LE Long Term Key Request
+	 *   LE Remote Connection Parameter Request
+	 *   LE Data Length Change
+	 *   LE PHY Update Complete
+	 */
+	cmd_slem.mask[0] = 0x7f;
+	cmd_slem.mask[1] = 0x08;
+	cmd_slem.mask[2] = 0x00;
+	cmd_slem.mask[3] = 0x00;
+	cmd_slem.mask[4] = 0x00;
+	cmd_slem.mask[5] = 0x00;
+	cmd_slem.mask[6] = 0x00;
+	cmd_slem.mask[7] = 0x00;
+
+	/* TODO: Move to suitable place. Set suitable masks */
+	/* Reset Command */
+	bt_hci_send(io->hci, BT_HCI_CMD_RESET, NULL, 0, hci_generic_callback,
+								NULL, NULL);
+
+	/* Read local supported commands */
+	bt_hci_send(io->hci, BT_HCI_CMD_READ_LOCAL_COMMANDS, NULL, 0,
+					local_commands_callback, NULL, NULL);
+
+	/* Read local supported features */
+	bt_hci_send(io->hci, BT_HCI_CMD_READ_LOCAL_FEATURES, NULL, 0,
+					local_features_callback, NULL, NULL);
+
+	/* Set event mask */
+	bt_hci_send(io->hci, BT_HCI_CMD_SET_EVENT_MASK, &cmd_sem,
+			sizeof(cmd_sem), hci_generic_callback, NULL, NULL);
+
+	/* Set LE event mask */
+	bt_hci_send(io->hci, BT_HCI_CMD_LE_SET_EVENT_MASK, &cmd_slem,
+			sizeof(cmd_slem), hci_generic_callback, NULL, NULL);
+
+	/* Scan Params */
+	bt_hci_send(io->hci, BT_HCI_CMD_LE_SET_SCAN_PARAMETERS, &cmd,
+				sizeof(cmd), hci_generic_callback, NULL, NULL);
+}
+
 static bool dev_init(uint16_t index, struct mesh_io *io)
 {
 	struct mesh_io_private *tmp;
@@ -200,6 +309,8 @@ static bool dev_init(uint16_t index, struct mesh_io *io)
 
 	bt_hci_register(tmp->hci, BT_HCI_EVT_LE_META_EVENT,
 						event_callback, io, NULL);
+
+	configure_hci(tmp);
 
 	io->pvt = tmp;
 	return true;
