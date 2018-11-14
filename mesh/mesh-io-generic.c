@@ -568,13 +568,25 @@ static bool find_by_filter_id(const void *a, const void *b)
 	return rx_reg->filter_id == filter_id;
 }
 
+static void set_recv_scan_enable(const void *buf, uint8_t size,
+							void *user_data)
+{
+	struct mesh_io_private *pvt = user_data;
+	struct bt_hci_cmd_le_set_scan_enable cmd;
+
+	cmd.enable = 0x01;	/* Enable scanning */
+	cmd.filter_dup = 0x00;	/* Report duplicates */
+	bt_hci_send(pvt->hci, BT_HCI_CMD_LE_SET_SCAN_ENABLE,
+			&cmd, sizeof(cmd), NULL, NULL, NULL);
+}
+
 static bool recv_register(struct mesh_io *io, uint8_t filter_id,
 				mesh_io_recv_func_t cb, void *user_data)
 {
-	struct bt_hci_cmd_le_set_scan_enable cmd;
+	struct bt_hci_cmd_le_set_scan_parameters cmd;
 	struct mesh_io_private *pvt = io->pvt;
 	struct pvt_rx_reg *rx_reg;
-	bool scanning;
+	bool already_scanning;
 
 	l_info("%s %d", __func__, filter_id);
 	if (!cb || !filter_id || filter_id > sizeof(pvt->filters))
@@ -593,15 +605,20 @@ static bool recv_register(struct mesh_io *io, uint8_t filter_id,
 	rx_reg->cb = cb;
 	rx_reg->user_data = user_data;
 
-	scanning = !l_queue_isempty(pvt->rx_regs);
+	already_scanning = !l_queue_isempty(pvt->rx_regs);
 
 	l_queue_push_head(pvt->rx_regs, rx_reg);
 
-	if (!scanning) {
-		cmd.enable = 0x01;	/* Enable scanning */
-		cmd.filter_dup = 0x00;	/* Report duplicates */
-		bt_hci_send(pvt->hci, BT_HCI_CMD_LE_SET_SCAN_ENABLE,
-				&cmd, sizeof(cmd), NULL, NULL, NULL);
+	if (!already_scanning) {
+		cmd.type = 0x00;				/* Passive scanning */
+		cmd.interval = L_CPU_TO_LE16(0x0010);		/* 10 ms */
+		cmd.window = L_CPU_TO_LE16(0x0010);		/* 10 ms */
+		cmd.own_addr_type = 0x01; 			/* ADDR_TYPE_RANDOM */
+		cmd.filter_policy = 0x00;			/* Accept all */
+
+		bt_hci_send(pvt->hci, BT_HCI_CMD_LE_SET_SCAN_PARAMETERS,
+				&cmd, sizeof(cmd),
+				set_recv_scan_enable, pvt, NULL);
 	}
 
 	return true;
